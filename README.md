@@ -1,90 +1,86 @@
 # hand_det_pose_convert
 
-Host-side ONNX -> RKNN conversion pipeline for the hand detection / pose
-estimation algorithm, plus a PC-side end-to-end accuracy/speed bench so
-the converted RKNN can be sanity-checked against the original ONNX
-without touching a board. Targets **RK3588** with the on-board
-`RKNPU 0.9.8 20240828` driver (librknnrt 2.3.x line).
+主机侧 ONNX → RKNN 转换流水线，用于手部检测 / 姿态估计算法；同时附带
+PC 端的端到端精度 / 速度评测，可在不接触开发板的前提下，对转换后的 RKNN
+与原始 ONNX 做对齐校验。目标平台为 **RK3588**，板端驱动版本
+`RKNPU 0.9.8 20240828`（对应 librknnrt 2.3.x 系列）。
 
-**Scope of this repo**: convert + PC-side validation only. No board-side
-runtime, no deployment scripts.
+**本仓库范围**：仅做转换 + PC 端验证。不含板端运行时，不含部署脚本。
 
-Two models per turn:
+每轮共两个模型：
 
-| stage | ONNX                       | input    | preset  | channel |
-| ----- | -------------------------- | -------- | ------- | ------- |
-| det   | rtmdet_s_hand_640.onnx     | 640x640  | rtmdet  | BGR     |
-| pose  | rtmpose_hand_256.onnx      | 256x256  | rtmpose | RGB     |
+| 阶段 | ONNX                       | 输入     | preset  | 通道顺序 |
+| ---- | -------------------------- | -------- | ------- | -------- |
+| det  | rtmdet_s_hand_640.onnx     | 640x640  | rtmdet  | BGR      |
+| pose | rtmpose_hand_256.onnx      | 256x256  | rtmpose | RGB      |
 
-Output `.rknn` files land in `out/`; copy them out to your runtime/deployment dir.
+输出的 `.rknn` 落到 `out/`；自行复制到下游运行时 / 部署目录。
 
-## Repository layout
+## 仓库结构
 
 ```
 .
-├── onnx/         input ONNX models (provided)
+├── onnx/         输入 ONNX 模型（已入库）
 ├── calib/
-│   └── images/      in-repo calibration set (956 hand crops, ~200 MB)
-├── eval/         held-out accuracy-check set (bundled in-repo)
-│   ├── val.json          COCO annotations (34 images)
-│   └── val_images/       34 validation images
-├── out/          conversion artefacts (gitignored)
-├── scripts/      python tools (onnx2rknn, bench_e2e, pipeline_lib)
-├── docs/         additional notes
+│   └── images/      在库校准集（956 张手部 crop，约 200 MB）
+├── eval/         留出的精度对齐验证集（已入库）
+│   ├── val.json          COCO 标注（34 张图）
+│   └── val_images/       34 张验证图
+├── out/          转换产物（gitignored）
+├── scripts/      Python 工具（onnx2rknn / bench_e2e / pipeline_lib）
+├── docs/         补充说明
 ├── third_party/  rknn-toolkit2 submodule
 └── convert_all.sh
 ```
 
-The repo is **self-contained**: `./convert_all.sh` runs the full pipeline
-without needing any external data — the calibration set (`calib/images/`),
-the input ONNX models (`onnx/`), and the eval set (`eval/`) are all bundled
-in-tree.
+本仓库**自包含**：`./convert_all.sh` 跑全流程不依赖任何外部数据 ——
+校准集（`calib/images/`）、输入 ONNX（`onnx/`）、验证集（`eval/`）全部
+已入库随仓库一起走。
 
-`scripts/onnx2rknn.py` samples `--calib-n` images out of `calib/images/`
-at conversion time with a fixed seed, so calibration is reproducible from
-the in-repo data alone.
+`scripts/onnx2rknn.py` 在转换时用固定种子从 `calib/images/` 抽 `--calib-n`
+张作为校准集，因此校准过程**只**依赖仓库内数据即可复现。
 
-## Version pinning (must match)
+## 版本绑定（必须对齐）
 
-| component         | version  | reason                                        |
-| ----------------- | -------- | --------------------------------------------- |
-| board librknnrt   | 2.3.x    | from `dmesg | grep RKNPU` -> `0.9.8 20240828` |
-| rknn-toolkit2 (host) | 2.3.2 | matches the `.rknn` already on the board      |
-| onnx              | 1.16.1   | 1.17+ removed `onnx.mapping`, breaks toolkit  |
-| python            | 3.10     | toolkit wheel target                          |
-| numpy             | 1.26.4   | onnx/toolkit compatibility window             |
+| 组件                  | 版本     | 理由                                            |
+| --------------------- | -------- | ----------------------------------------------- |
+| 板端 librknnrt        | 2.3.x    | 来自 `dmesg \| grep RKNPU` -> `0.9.8 20240828` |
+| rknn-toolkit2 （主机） | 2.3.2    | 与板端已部署的 `.rknn` 文件头声明的版本一致     |
+| onnx                  | 1.16.1   | 1.17+ 移除了 `onnx.mapping`，会破坏 toolkit     |
+| python                | 3.10     | toolkit wheel 的目标 Python 版本                |
+| numpy                 | 1.26.4   | onnx / toolkit 的兼容窗口                       |
 
-## First-time setup
+## 首次环境搭建
 
 ```sh
 python3.10 -m venv .venv_rknn
 . .venv_rknn/bin/activate
 
-# rknn-toolkit2 wheel comes from the submodule (not PyPI)
+# rknn-toolkit2 不在 PyPI，从子模块本地 wheel 安装
 git submodule update --init --recursive
 pip install third_party/rknn-toolkit2/rknn-toolkit2/packages/x86_64/cp310/rknn_toolkit2-2.3.2-cp310-cp310-linux_x86_64.whl
 
 pip install -r requirements.txt
 ```
 
-Sanity check:
+环境自检：
 
 ```sh
-python -c "from rknn.api import RKNN; print(RKNN().get_sdk_version())"   # expect 2.3.2
-python -c "import onnx; print(onnx.__version__)"                          # expect 1.16.1
+python -c "from rknn.api import RKNN; print(RKNN().get_sdk_version())"   # 期望 2.3.2
+python -c "import onnx; print(onnx.__version__)"                          # 期望 1.16.1
 ```
 
-## One-shot pipeline
+## 一键流水线
 
 ```sh
-./convert_all.sh         # default CALIB_N=50
+./convert_all.sh         # 默认 CALIB_N=50
 CALIB_N=100 ./convert_all.sh
 ```
 
-Manual step-by-step:
+## 手动分步
 
 ```sh
-# convert
+# 转换
 python scripts/onnx2rknn.py --model rtmdet  \
     --onnx onnx/rtmdet_s_hand_640.onnx \
     --out  out/rtmdet_s_hand_640.rknn  \
@@ -97,47 +93,45 @@ python scripts/onnx2rknn.py --model rtmpose \
     --input-size 256 256 \
     --quantize --calib-dir calib/images --calib-n 50
 
-# end-to-end PC bench: ONNX baseline
+# 端到端 PC 评测：ONNX 基线
 python scripts/bench_e2e.py --backend onnx \
     --det  onnx/rtmdet_s_hand_640.onnx \
     --pose onnx/rtmpose_hand_256.onnx  \
     --ann  eval/val.json --img-dir eval/val_images
 
-# end-to-end PC bench: converted RKNN (toolkit2 simulator)
+# 端到端 PC 评测：转换后的 RKNN（toolkit2 模拟器）
 python scripts/bench_e2e.py --backend rknn \
     --det  out/rtmdet_s_hand_640.rknn \
     --pose out/rtmpose_hand_256.rknn  \
     --ann  eval/val.json --img-dir eval/val_images
 ```
 
-Each bench prints a `PASS:` line with detector recall, PCK@5, and
-end-to-end latency / FPS. Compare ONNX vs RKNN to catch quantization
-regressions: recall drop ≤ 5pp and PCK@5 drop ≤ 5pp is the expected
-budget.
+每次评测会打印 `PASS:` 行，包含检测 recall、PCK@5、端到端延迟 / FPS。
+比对 ONNX 与 RKNN 即可发现量化退化：recall 下降 ≤ 5pp，且 PCK@5 下降
+≤ 5pp 是预期阈值。
 
-> **Latency caveat**: the RKNN bench runs on the rknn-toolkit2 PC
-> simulator (`target=None`), not on the board NPU. Use it for accuracy
-> regression checks, not as a proxy for on-board FPS.
+> **延迟说明**：RKNN 评测跑在 rknn-toolkit2 的 PC 模拟器上
+> （`target=None`），并非板端 NPU。该数字仅用于精度回归排查，**不能**
+> 当作板端 FPS 参考。
 
-## Deploying to the board
+## 部署到开发板
 
-`out/*.rknn` is gitignored. Copy the converted artefacts to whatever
-runtime / deployment directory your project uses; that wiring lives
-outside this submodule.
+`out/*.rknn` 已 gitignore。把转换产物复制到下游运行时 / 部署目录即可；
+具体路径由项目侧决定，与本仓库无关。
 
 ```sh
 cp out/rtmdet_s_hand_640.rknn <deploy_dir>/
 cp out/rtmpose_hand_256.rknn  <deploy_dir>/
 ```
 
-Detector file name changes from the legacy `rtmdet_nano_hand_320.rknn`
-to `rtmdet_s_hand_640.rknn`. Update consumer paths and letterbox input
-size (320 -> 640) accordingly on the runtime side.
+检测器文件名从旧的 `rtmdet_nano_hand_320.rknn` 变为
+`rtmdet_s_hand_640.rknn`。下游消费方需同步更新文件路径以及 letterbox
+输入尺寸（320 → 640）。
 
-## Notes / gotchas
+## 注意事项
 
-- The RTMDet preset feeds **BGR** directly (`quant_img_RGB2BGR=False`). The
-  internal RGB->BGR swap path in toolkit 2.3.2 is buggy for this model, so
-  any runtime consuming the .rknn must also feed BGR.
-- Quantization is `w8a8`; this is hard-coded in `scripts/onnx2rknn.py`.
-- `out/` is gitignored; promote the artefacts to your runtime/deployment dir manually.
+- RTMDet preset 直接以 **BGR** 喂图（`quant_img_RGB2BGR=False`）。
+  toolkit 2.3.2 内部的 RGB→BGR swap 路径对此模型有 bug，因此任何消费
+  此 `.rknn` 的运行时也必须直接喂 BGR。
+- 量化模式 `w8a8`，硬编码在 `scripts/onnx2rknn.py`。
+- `out/` 已 gitignore；自行把转换产物拷贝到下游运行时 / 部署目录。

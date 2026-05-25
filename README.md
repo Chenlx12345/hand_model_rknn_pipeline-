@@ -19,8 +19,7 @@ Output `.rknn` files land in `out/`; copy them out to your runtime/deployment di
 .
 ├── onnx/         input ONNX models (provided)
 ├── calib/
-│   ├── source_pool/  in-repo calibration pool (956 hand crops, ~200MB)
-│   └── images/       per-build sampled subset (gitignored)
+│   └── images/      in-repo calibration set (956 hand crops, ~200 MB)
 ├── eval/         held-out accuracy-check set (bundled in-repo)
 │   ├── val.json          COCO annotations (34 images)
 │   ├── val_images/       34 validation images
@@ -33,13 +32,13 @@ Output `.rknn` files land in `out/`; copy them out to your runtime/deployment di
 ```
 
 The repo is **self-contained**: `./convert_all.sh` runs the full pipeline
-without needing any external data — calibration source (`calib/source_pool/`),
+without needing any external data — the calibration set (`calib/images/`),
 the input ONNX models (`onnx/`), and the eval set (`eval/`) are all bundled
 in-tree.
 
-`calib/source_pool/` is a fixed-population pool: `prepare_calib.py` samples
-from it into `calib/images/` (gitignored) for each build, ensuring that
-calibration is reproducible from the in-repo data alone.
+`scripts/onnx2rknn.py` samples `--calib-n` images out of `calib/images/`
+at conversion time with a fixed seed, so calibration is reproducible from
+the in-repo data alone.
 
 ## Version pinning (must match)
 
@@ -81,8 +80,6 @@ CALIB_N=100 ./convert_all.sh
 Manual step-by-step:
 
 ```sh
-python scripts/prepare_calib.py --src calib/source_pool --dst calib/images --n 50
-
 python scripts/onnx2rknn.py --model rtmdet  \
     --onnx onnx/rtmdet_s_hand_640.onnx \
     --out  out/rtmdet_s_hand_640.rknn  \

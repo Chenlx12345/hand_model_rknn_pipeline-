@@ -31,11 +31,14 @@ release that still ships the module.
 
 - INT8 quantization is performed with `quantized_dtype="w8a8"`
   (set in `scripts/onnx2rknn.py`).
-- The calibration subset comes from `calib/images/`, populated by
-  `scripts/prepare_calib.py` from `eval/val_images/`.
-- `prepare_calib.py` **copies** images (does not symlink) and records the
-  chosen filenames into `calib/sampled.txt`. This freezes the calibration
-  population even if `eval/val_images/` grows or shrinks later.
+- The calibration set lives in `calib/images/` — 956 hand crops bundled
+  in-repo. `scripts/onnx2rknn.py` (`build_calib_list`) samples `--calib-n`
+  of them at conversion time with a fixed seed (default 0), writes the
+  per-build dataset.txt as `_calib_*.txt` (gitignored), then feeds it to
+  the toolkit.
+- The calibration set is physically separate from `eval/val_images/`
+  (34-image held-out evaluation set) so that changes to the eval set never
+  silently shift quantization behaviour.
 - Default sample count is 50; raise via `CALIB_N=...` env var or the
   `--calib-n` flag on `onnx2rknn.py` for tighter quantization at the cost
   of build time.

@@ -1,7 +1,5 @@
 # transient artefacts of the conversion pipeline
 out/*.rknn
-calib/images/
-calib/sampled.txt
 **/_calib_*.txt
 
 # python virtualenv

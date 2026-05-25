@@ -21,30 +21,27 @@ CALIB_N=${CALIB_N:-50}
 EVAL_ANN=${EVAL_ANN:-eval/val.json}
 EVAL_IMG_DIR=${EVAL_IMG_DIR:-eval/val_images}
 
-echo "[1/5] prepare calibration subset (n=$CALIB_N from calib/source_pool)"
-python scripts/prepare_calib.py --src calib/source_pool --dst calib/images --n "$CALIB_N"
-
-echo "[2/5] convert rtmdet_s_hand_640.onnx -> rknn"
+echo "[1/4] convert rtmdet_s_hand_640.onnx -> rknn (calib n=$CALIB_N from calib/images)"
 python scripts/onnx2rknn.py --model rtmdet \
     --onnx onnx/rtmdet_s_hand_640.onnx \
     --out  out/rtmdet_s_hand_640.rknn \
     --input-size 640 640 \
     --quantize --calib-dir calib/images --calib-n "$CALIB_N"
 
-echo "[3/5] convert rtmpose_hand_256.onnx -> rknn"
+echo "[2/4] convert rtmpose_hand_256.onnx -> rknn (calib n=$CALIB_N from calib/images)"
 python scripts/onnx2rknn.py --model rtmpose \
     --onnx onnx/rtmpose_hand_256.onnx \
     --out  out/rtmpose_hand_256.rknn \
     --input-size 256 256 \
     --quantize --calib-dir calib/images --calib-n "$CALIB_N"
 
-echo "[4/5] accuracy compare: detector (ONNX vs RKNN-fp16 simulator)"
+echo "[3/4] accuracy compare: detector (ONNX vs RKNN-fp16 simulator)"
 python scripts/compare_det.py \
     --onnx onnx/rtmdet_s_hand_640.onnx \
     --ann  "$EVAL_ANN" \
     --img-dir "$EVAL_IMG_DIR"
 
-echo "[5/5] accuracy compare: pose (ONNX vs RKNN-fp16 simulator)"
+echo "[4/4] accuracy compare: pose (ONNX vs RKNN-fp16 simulator)"
 python scripts/compare_pose.py \
     --onnx onnx/rtmpose_hand_256.onnx \
     --ann  "$EVAL_ANN" \

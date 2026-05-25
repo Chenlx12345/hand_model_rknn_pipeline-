@@ -1,24 +1,14 @@
-# INT8 calibration directory
+# INT8 calibration set
 
-Contents under `images/` and the sibling `sampled.txt` are produced by
-`scripts/prepare_calib.py` and are **not** tracked in git. They are
-deliberately physically separated from the held-out evaluation set
-(`../eval/val_images/`) so that changes to the evaluation set never
-silently shift quantization behaviour.
+`images/` holds the in-repo calibration set: 956 hand crops, ~200 MB,
+committed so that calibration is reproducible from this repo alone with no
+external dataset.
 
-`source_pool/` is the in-repo fixed-population calibration source
-(956 hand crops, ~200 MB) — committed so that calibration is
-reproducible from this repo alone, with no external dataset needed.
+It is deliberately physically separated from the held-out evaluation set
+(`../eval/val_images/`, 34 images) so that changes to the evaluation set
+never silently shift quantization behaviour.
 
-Re-populate with:
-
-```sh
-python ../scripts/prepare_calib.py \
-    --src ./source_pool \
-    --dst images \
-    --n 50 --seed 0 --clear
-```
-
-`sampled.txt` records the filenames actually used during the last
-calibration build, enabling exact-reproducible quantization across
-machines / time.
+`scripts/onnx2rknn.py` (function `build_calib_list`) samples `--calib-n`
+images out of `images/` at conversion time with a fixed seed, and writes
+the per-build dataset.txt as `_calib_*.txt` (gitignored). No separate
+prep step is needed — just point `--calib-dir` at `calib/images`.

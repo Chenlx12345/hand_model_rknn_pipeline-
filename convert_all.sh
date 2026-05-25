@@ -1,5 +1,5 @@
 #!/bin/sh
-# One-shot pipeline: prepare calib -> ONNX->RKNN x2 -> accuracy compare x2.
+# One-shot pipeline: ONNX->RKNN x2 -> end-to-end bench (ONNX, then RKNN).
 # Run from the repo root, after the .venv_rknn environment is set up.
 # See README.md for env setup.
 
@@ -35,18 +35,20 @@ python scripts/onnx2rknn.py --model rtmpose \
     --input-size 256 256 \
     --quantize --calib-dir calib/images --calib-n "$CALIB_N"
 
-echo "[3/4] accuracy compare: detector (ONNX vs RKNN-fp16 simulator)"
-python scripts/compare_det.py \
-    --onnx onnx/rtmdet_s_hand_640.onnx \
+echo "[3/4] end-to-end bench: ONNX (det+pose)"
+python scripts/bench_e2e.py --backend onnx \
+    --det  onnx/rtmdet_s_hand_640.onnx \
+    --pose onnx/rtmpose_hand_256.onnx \
     --ann  "$EVAL_ANN" \
     --img-dir "$EVAL_IMG_DIR"
 
-echo "[4/4] accuracy compare: pose (ONNX vs RKNN-fp16 simulator)"
-python scripts/compare_pose.py \
-    --onnx onnx/rtmpose_hand_256.onnx \
+echo "[4/4] end-to-end bench: RKNN (det+pose, PC simulator — NOT board)"
+python scripts/bench_e2e.py --backend rknn \
+    --det  out/rtmdet_s_hand_640.rknn \
+    --pose out/rtmpose_hand_256.rknn \
     --ann  "$EVAL_ANN" \
-    --img-dir "$EVAL_IMG_DIR" \
-    --save-ref-kpts eval/onnx_ref_kpts.npz
+    --img-dir "$EVAL_IMG_DIR"
 
 echo "PASS: rknn ready under out/"
-echo "  next: cp out/*.rknn <deploy_dir>/   # promote to your runtime/deployment dir"
+echo "  RKNN latency above is PC simulator, not on-board NPU."
+echo "  next: copy out/*.rknn to wherever your runtime expects them."

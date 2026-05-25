@@ -14,10 +14,10 @@ runtime (`librknnrt.so`) sits on the 2.3.x line. To stay byte-compatible
 with `.rknn` produced on the host, the host toolkit must therefore be
 pinned to **rknn-toolkit2 2.3.2**.
 
-The existing `external/ant_algorithm/rknn/*.rknn` files were also produced
-by toolkit 2.3.2 (verified by inspecting the RKNN file header), so any
-file conversion regression chasing version drift is ruled out by sticking
-with the same toolkit version.
+The existing `.rknn` files previously deployed to the board were also
+produced by toolkit 2.3.2 (verified by inspecting the RKNN file header),
+so any file conversion regression chasing version drift is ruled out by
+sticking with the same toolkit version.
 
 ## Why onnx must be 1.16.1
 
@@ -49,27 +49,41 @@ The RTMDet preset in `scripts/onnx2rknn.py` sets
 `quant_img_RGB2BGR=False` and feeds BGR straight into the network. The
 swap path inside toolkit 2.3.2 has been observed to mis-quantize this
 specific RTMDet variant, so do **not** flip the swap flag without first
-re-running `compare_det.py` and checking PCK/IoU on the held-out set.
+re-running `scripts/bench_e2e.py --backend rknn` and confirming recall +
+PCK on the held-out set are still within budget.
 
-The C++ inference side on the board must mirror the host: feed BGR
+Any downstream runtime consuming the .rknn must mirror this: feed BGR
 directly, do not pre-swap, do not pre-normalize (mean/std bake-in is
 already part of the `.rknn`).
 
+## PC-side bench vs board NPU
+
+`scripts/bench_e2e.py --backend rknn` runs the converted .rknn through
+the rknn-toolkit2 PC simulator (`init_runtime(target=None)`). This is a
+software emulation of the NPU op graph:
+
+- **Accuracy numbers are valid** — the simulator runs the same quantized
+  graph the board will. Recall / PCK regressions here mean a real
+  quantization problem.
+- **Latency numbers are NOT** — simulator cycles are CPU-bound and have
+  no relationship to on-board NPU throughput. Do not quote `E2E_FPS`
+  from the simulator as a board figure.
+
+For real board FPS you need a separate on-device benchmark; that lives
+outside this submodule.
+
 ## Promoting an artefact to deployment
 
-`out/*.rknn` is gitignored. To deploy, copy them to wherever the C++
-runtime / on-board benchmark expects them (e.g. an `external/ant_algorithm/rknn/`
-directory in the parent superproject, if/when that dir exists):
+`out/*.rknn` is gitignored. To deploy, copy them to wherever the
+downstream runtime expects them. The wiring (target directory, file
+names, C++ loader paths) lives in whatever project owns the board side
+and is intentionally out of scope here:
 
 ```sh
 cp out/rtmdet_s_hand_640.rknn <deploy_dir>/
 cp out/rtmpose_hand_256.rknn  <deploy_dir>/
 ```
 
-Then commit the new files in the parent superproject (not in this
-sub-submodule), so the board-side `serial_benchmark.py` and the C++
-runtime pick them up.
-
-The detector model changes from `rtmdet_nano_hand_320.rknn` (the legacy
-on-board file) to `rtmdet_s_hand_640.rknn`. Update every consumer (Python
-bench, C++ loader, any hard-coded path strings).
+Detector file name changes from the legacy `rtmdet_nano_hand_320.rknn`
+to `rtmdet_s_hand_640.rknn`. Update every downstream consumer (loader
+paths, hard-coded letterbox size 320 -> 640).

@@ -1,8 +1,13 @@
 # hand_det_pose_convert
 
 Host-side ONNX -> RKNN conversion pipeline for the hand detection / pose
-estimation algorithm shipped in `external/ant_algorithm/`. Targets **RK3588**
-with the on-board `RKNPU 0.9.8 20240828` driver (librknnrt 2.3.x line).
+estimation algorithm, plus a PC-side end-to-end accuracy/speed bench so
+the converted RKNN can be sanity-checked against the original ONNX
+without touching a board. Targets **RK3588** with the on-board
+`RKNPU 0.9.8 20240828` driver (librknnrt 2.3.x line).
+
+**Scope of this repo**: convert + PC-side validation only. No board-side
+runtime, no deployment scripts.
 
 Two models per turn:
 
@@ -22,10 +27,9 @@ Output `.rknn` files land in `out/`; copy them out to your runtime/deployment di
 │   └── images/      in-repo calibration set (956 hand crops, ~200 MB)
 ├── eval/         held-out accuracy-check set (bundled in-repo)
 │   ├── val.json          COCO annotations (34 images)
-│   ├── val_images/       34 validation images
-│   └── onnx_ref_kpts.npz golden reference from compare_pose
+│   └── val_images/       34 validation images
 ├── out/          conversion artefacts (gitignored)
-├── scripts/      python tools (see below)
+├── scripts/      python tools (onnx2rknn, bench_e2e, pipeline_lib)
 ├── docs/         additional notes
 ├── third_party/  rknn-toolkit2 submodule
 └── convert_all.sh
@@ -80,6 +84,7 @@ CALIB_N=100 ./convert_all.sh
 Manual step-by-step:
 
 ```sh
+# convert
 python scripts/onnx2rknn.py --model rtmdet  \
     --onnx onnx/rtmdet_s_hand_640.onnx \
     --out  out/rtmdet_s_hand_640.rknn  \
@@ -92,35 +97,47 @@ python scripts/onnx2rknn.py --model rtmpose \
     --input-size 256 256 \
     --quantize --calib-dir calib/images --calib-n 50
 
-python scripts/compare_det.py  --onnx onnx/rtmdet_s_hand_640.onnx \
-    --ann eval/val.json --img-dir eval/val_images
-python scripts/compare_pose.py --onnx onnx/rtmpose_hand_256.onnx \
-    --ann eval/val.json --img-dir eval/val_images \
-    --save-ref-kpts eval/onnx_ref_kpts.npz
+# end-to-end PC bench: ONNX baseline
+python scripts/bench_e2e.py --backend onnx \
+    --det  onnx/rtmdet_s_hand_640.onnx \
+    --pose onnx/rtmpose_hand_256.onnx  \
+    --ann  eval/val.json --img-dir eval/val_images
+
+# end-to-end PC bench: converted RKNN (toolkit2 simulator)
+python scripts/bench_e2e.py --backend rknn \
+    --det  out/rtmdet_s_hand_640.rknn \
+    --pose out/rtmpose_hand_256.rknn  \
+    --ann  eval/val.json --img-dir eval/val_images
 ```
+
+Each bench prints a `PASS:` line with detector recall, PCK@5, and
+end-to-end latency / FPS. Compare ONNX vs RKNN to catch quantization
+regressions: recall drop ≤ 5pp and PCK@5 drop ≤ 5pp is the expected
+budget.
+
+> **Latency caveat**: the RKNN bench runs on the rknn-toolkit2 PC
+> simulator (`target=None`), not on the board NPU. Use it for accuracy
+> regression checks, not as a proxy for on-board FPS.
 
 ## Deploying to the board
 
+`out/*.rknn` is gitignored. Copy the converted artefacts to whatever
+runtime / deployment directory your project uses; that wiring lives
+outside this submodule.
+
 ```sh
-# Promote the artefacts wherever the C++ runtime / serial_benchmark.py
-# expects to find them (typically external/ant_algorithm/rknn/ in the
-# parent superproject — re-create that dir if it doesn't exist):
 cp out/rtmdet_s_hand_640.rknn <deploy_dir>/
 cp out/rtmpose_hand_256.rknn  <deploy_dir>/
-# scp <deploy_dir>/*.rknn <board>:/path/to/runtime/
 ```
 
-Detector model name changes from `rtmdet_nano_hand_320.rknn` (the legacy
-on-board file) to `rtmdet_s_hand_640.rknn`. Update the C++ loader paths
-and the letterbox input size (320 -> 640) accordingly.
+Detector file name changes from the legacy `rtmdet_nano_hand_320.rknn`
+to `rtmdet_s_hand_640.rknn`. Update consumer paths and letterbox input
+size (320 -> 640) accordingly on the runtime side.
 
 ## Notes / gotchas
 
 - The RTMDet preset feeds **BGR** directly (`quant_img_RGB2BGR=False`). The
   internal RGB->BGR swap path in toolkit 2.3.2 is buggy for this model, so
-  the runtime side must also feed BGR.
-- `onnx_ref_kpts.npz` under `eval/` is a cached set of ONNX-predicted
-  keypoints. It is the golden reference for pose accuracy checks; it is
-  **not** the INT8 calibration set.
+  any runtime consuming the .rknn must also feed BGR.
 - Quantization is `w8a8`; this is hard-coded in `scripts/onnx2rknn.py`.
 - `out/` is gitignored; promote the artefacts to your runtime/deployment dir manually.

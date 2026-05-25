@@ -58,7 +58,7 @@ python3.10 -m venv .venv_rknn
 
 # rknn-toolkit2 不在 PyPI，从子模块本地 wheel 安装
 git submodule update --init --recursive
-pip install third_party/rknn-toolkit2/rknn-toolkit2/packages/x86_64/cp310/rknn_toolkit2-2.3.2-cp310-cp310-linux_x86_64.whl
+pip install third_party/rknn-toolkit2/rknn-toolkit2/packages/x86_64/rknn_toolkit2-2.3.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 
 pip install -r requirements.txt
 ```

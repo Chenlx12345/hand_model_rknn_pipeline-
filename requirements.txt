@@ -5,7 +5,7 @@
 #
 # The rknn-toolkit2 wheel itself is NOT on PyPI; install it from the
 # bundled submodule, e.g.:
-#   pip install third_party/rknn-toolkit2/rknn-toolkit2/packages/x86_64/cp310/rknn_toolkit2-2.3.2-cp310-cp310-linux_x86_64.whl
+#   pip install third_party/rknn-toolkit2/rknn-toolkit2/packages/x86_64/rknn_toolkit2-2.3.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 
 onnx==1.16.1
 onnxruntime==1.18.1

@@ -66,7 +66,7 @@ pip install -r requirements.txt
 环境自检：
 
 ```sh
-python -c "from rknn.api import RKNN; print(RKNN().get_sdk_version())"   # 期望 2.3.2
+python -c "from importlib.metadata import version; print(version('rknn-toolkit2'))"   # 期望 2.3.2
 python -c "import onnx; print(onnx.__version__)"                          # 期望 1.16.1
 ```
 

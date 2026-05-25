@@ -1,28 +1,15 @@
-"""Convert an exported ONNX to RKNN for RK3588.
-
-Target board NPU: RKNPU 0.9.8 20240828 (librknnrt 2.3.x) -> pin
-rknn-toolkit2==2.3.2 on the host. See docs/convert_rk3588.md.
-
-Per-model defaults (--model) preset mean/std and channel order to match each
-model's data preprocessor. Override individually with --mean / --std /
---rgb-to-bgr if needed.
+"""ONNX -> RKNN for RK3588.
 
 Presets:
   rtmpose   mean=123.675,116.28,103.53   std=58.395,57.12,57.375   RGB
   rtmdet    mean=103.53,116.28,123.675   std=57.375,57.12,58.395   BGR
 
-Recommended invocation (from repo root):
-  python scripts/onnx2rknn.py --model rtmdet  --onnx onnx/rtmdet_s_hand_640.onnx \\
-      --out out/rtmdet_s_hand_640.rknn \\
-      --quantize --calib-dir calib/images --calib-n 50
-  python scripts/onnx2rknn.py --model rtmpose --onnx onnx/rtmpose_hand_256.onnx \\
-      --out out/rtmpose_hand_256.rknn \\
-      --quantize --calib-dir calib/images --calib-n 50
+  python scripts/onnx2rknn.py --model rtmdet --onnx onnx/rtmdet_s_hand_640.onnx \\
+      --out out/rtmdet_s_hand_640.rknn --quantize --calib-dir datasets/calib/images
 """
 from __future__ import annotations
 import argparse
 import os
-import random
 import sys
 from pathlib import Path
 
@@ -36,14 +23,12 @@ PRESETS = {
 }
 
 
-def build_calib_list(calib_dir: Path, n: int, out_txt: Path) -> int:
+def build_calib_list(calib_dir: Path, out_txt: Path) -> int:
+    """Write every image under calib_dir (sorted, recursive) to out_txt."""
     exts = {".jpg", ".jpeg", ".png", ".bmp"}
     images = sorted(p for p in calib_dir.rglob("*") if p.suffix.lower() in exts)
     if not images:
         raise FileNotFoundError(f"No images found under {calib_dir}")
-    random.seed(0)
-    if n and n < len(images):
-        images = random.sample(images, n)
     out_txt.parent.mkdir(parents=True, exist_ok=True)
     with open(out_txt, "w") as f:
         for p in images:
@@ -70,8 +55,8 @@ def main():
                     help="set if model wants BGR but you'll feed RGB at runtime")
     ap.add_argument("--no-rgb-to-bgr", action="store_true")
     ap.add_argument("--quantize", action="store_true")
-    ap.add_argument("--calib-dir", type=Path)
-    ap.add_argument("--calib-n",   type=int, default=50)
+    ap.add_argument("--calib-dir", type=Path,
+                    help="root of calibration images (entire tree is used)")
     args = ap.parse_args()
 
     preset = PRESETS[args.model]
@@ -94,11 +79,7 @@ def main():
     if not args.onnx.exists():
         sys.exit(f"ONNX not found: {args.onnx}")
 
-    # Resolve every path to absolute BEFORE chdir — toolkit2 internally
-    # dumps `check*_*.onnx` (base_optimize / fuse_ops passes) to cwd with
-    # no API knob to redirect. Switching cwd to out/ traps those dumps
-    # there; absolute paths keep load_onnx / dataset.txt / export_rknn
-    # independent of cwd.
+    # absolute paths so chdir below doesn't break load_onnx/dataset/export
     onnx_abs      = args.onnx.resolve()
     out_abs       = args.out.resolve()
     out_dir       = out_abs.parent
@@ -126,8 +107,8 @@ def main():
             if not calib_dir_abs:
                 sys.exit("--quantize requires --calib-dir")
             calib_txt = (out_dir / f"_calib_{out_abs.stem}.txt").resolve()
-            n = build_calib_list(calib_dir_abs, args.calib_n, calib_txt)
-            print(f"[3/4] build INT8  (calib n={n})")
+            n = build_calib_list(calib_dir_abs, calib_txt)
+            print(f"[3/4] build INT8  (calib n={n}, full tree)")
             ret = rknn.build(do_quantization=True, dataset=str(calib_txt))
         else:
             print(f"[3/4] build (no quantization)")

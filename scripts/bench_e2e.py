@@ -1,40 +1,15 @@
 """End-to-end PC-side benchmark: rtmdet -> rtmpose, single backend.
 
-Same image set, same code paths — switch `--backend` to compare ONNX
-end-to-end against the converted RKNN end-to-end on the PC.
-
-Outputs per run:
-  - detection recall @ IoU>=0.5
-  - keypoint PCK@5/10/20 px (on matched hands, in original image space)
-  - per-stage latency (detector / pose-per-hand) + end-to-end ms/img + FPS
-
-WARNING: the RKNN path uses rknn-toolkit2 *PC simulator* (target=None),
-NOT the on-board NPU. Its latency is a software-emulation number and
-MUST NOT be quoted as board FPS. Recall/PCK numbers, however, ARE valid:
-the simulator runs the actual quantized graph.
-
-toolkit 2.3.2 constraint: `init_runtime(target=None)` rejects graphs loaded
-via `load_rknn(<exported.rknn>)` ("RKNN model that loaded by 'load_rknn' not
-support inference on the simulator"). The only simulator-compatible path is
-`load_onnx + config + build(do_quantization=True)`. So `--backend rknn`
-takes the *ONNX* paths plus the same `--calib-dir`/`--calib-n`/preset that
-`onnx2rknn.py` would use, rebuilds the INT8 graph in-memory, and feeds the
-PC simulator. With `random.seed(0)` pinning the calib list this is
-deterministically equivalent to the on-disk `.rknn` modulo toolkit build
-determinism — sufficient for PC accuracy regression.
-
-Usage (from repo root):
-  python scripts/bench_e2e.py --backend onnx \
-      --det  onnx/rtmdet_s_hand_640.onnx \
-      --pose onnx/rtmpose_hand_256.onnx  \
-      --ann  eval/val.json --img-dir eval/val_images
+`--backend rknn` runs on toolkit2's PC simulator — recall/PCK valid, latency NOT
+representative of board NPU. RKNN path takes ONNX paths + `--calib-dir` and
+rebuilds the INT8 graph in-memory (toolkit 2.3.2 simulator rejects load_rknn).
 
   python scripts/bench_e2e.py --backend rknn \
       --det  onnx/rtmdet_s_hand_640.onnx \
       --pose onnx/rtmpose_hand_256.onnx  \
       --det-model rtmdet --pose-model rtmpose \
-      --calib-dir calib/images --calib-n 50 \
-      --ann  eval/val.json --img-dir eval/val_images
+      --calib-dir datasets/calib/images \
+      --ann  datasets/eval/val.json --img-dir datasets/eval/val_images
 """
 from __future__ import annotations
 import argparse
@@ -117,18 +92,18 @@ class RknnBackend:
 
     def __init__(self, det_onnx: Path, pose_onnx: Path,
                  det_preset: dict, pose_preset: dict,
-                 calib_dir: Path, calib_n: int,
+                 calib_dir: Path,
                  target: str, scratch_dir: Path):
         self.det  = self._build(det_onnx,  det_preset,
-                                calib_dir, calib_n, target, scratch_dir,
+                                calib_dir, target, scratch_dir,
                                 tag="det")
         self.pose = self._build(pose_onnx, pose_preset,
-                                calib_dir, calib_n, target, scratch_dir,
+                                calib_dir, target, scratch_dir,
                                 tag="pose")
 
     @staticmethod
     def _build(onnx_path: Path, preset: dict,
-               calib_dir: Path, calib_n: int,
+               calib_dir: Path,
                target: str, scratch_dir: Path, tag: str):
         # chdir into scratch_dir so toolkit's hardcoded cwd dumps
         # (check0_base_optimize.onnx / check3_fuse_ops.onnx) land in
@@ -138,9 +113,9 @@ class RknnBackend:
         onnx_abs = onnx_path.resolve()
         calib_txt = (scratch_dir /
                      f"_calib_bench_{onnx_path.stem}.txt").resolve()
-        n = build_calib_list(calib_dir, calib_n, calib_txt)
+        n = build_calib_list(calib_dir, calib_txt)
         print(f"[{tag}] rebuild INT8 from {onnx_path.name} "
-              f"(calib n={n} from {calib_dir})")
+              f"(calib n={n}, full tree from {calib_dir})")
         orig_cwd = Path.cwd()
         os.chdir(scratch_dir)
         try:
@@ -204,9 +179,8 @@ def main():
     ap.add_argument("--pose-model", choices=list(PRESETS), default="rtmpose",
                     help="rknn-only: preset key for pose")
     ap.add_argument("--calib-dir", type=Path,
-                    help="rknn-only: calibration image root (required)")
-    ap.add_argument("--calib-n",   type=int, default=50,
-                    help="rknn-only: calibration sample count")
+                    help="rknn-only: calibration image root (entire tree "
+                         "is used, must match what onnx2rknn used)")
     ap.add_argument("--target",    default="rk3588",
                     help="rknn-only: target_platform for quant config")
     args = ap.parse_args()
@@ -220,7 +194,7 @@ def main():
         backend = OnnxBackend(args.det, args.pose)
     else:  # rknn — rebuild INT8 in-memory from ONNX (toolkit 2.3.2 simulator path)
         if args.calib_dir is None:
-            sys.exit("FAIL: --backend rknn requires --calib-dir + --calib-n")
+            sys.exit("FAIL: --backend rknn requires --calib-dir")
         if not args.calib_dir.exists():
             sys.exit(f"FAIL: missing: {args.calib_dir}")
         # Trap toolkit cwd-relative dumps (check*_*.onnx, _calib_*.txt)
@@ -232,7 +206,6 @@ def main():
             det_preset=PRESETS[args.det_model],
             pose_preset=PRESETS[args.pose_model],
             calib_dir=args.calib_dir.resolve(),
-            calib_n=args.calib_n,
             target=args.target,
             scratch_dir=scratch,
         )

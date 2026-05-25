@@ -24,8 +24,8 @@ PC 端的端到端精度 / 速度评测，可在不接触开发板的前提下�
 ├── calib/
 │   └── images/      在库校准集（956 张手部 crop，约 200 MB）
 ├── eval/         留出的精度对齐验证集（已入库）
-│   ├── val.json          COCO 标注（34 张图）
-│   └── val_images/       34 张验证图
+│   ├── val.json          COCO 标注（184 张图 / 296 个手部实例）
+│   └── val_images/       34 张验证图（val.json 的子集，bench 自动取交集）
 ├── out/          转换产物（gitignored）
 ├── scripts/      Python 工具（onnx2rknn / bench_e2e / pipeline_lib）
 ├── docs/         补充说明
@@ -84,13 +84,11 @@ CALIB_N=100 ./convert_all.sh
 python scripts/onnx2rknn.py --model rtmdet  \
     --onnx onnx/rtmdet_s_hand_640.onnx \
     --out  out/rtmdet_s_hand_640.rknn  \
-    --input-size 640 640 \
     --quantize --calib-dir calib/images --calib-n 50
 
 python scripts/onnx2rknn.py --model rtmpose \
     --onnx onnx/rtmpose_hand_256.onnx  \
     --out  out/rtmpose_hand_256.rknn   \
-    --input-size 256 256 \
     --quantize --calib-dir calib/images --calib-n 50
 
 # 端到端 PC 评测：ONNX 基线

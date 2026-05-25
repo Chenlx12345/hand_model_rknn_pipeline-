@@ -1,6 +1,8 @@
 # transient artefacts of the conversion pipeline
 out/*.rknn
 **/_calib_*.txt
+# rknn-toolkit2 build-pass intermediate dumps (hardcoded to cwd by toolkit)
+check*_*.onnx
 
 # python virtualenv
 .venv_rknn/

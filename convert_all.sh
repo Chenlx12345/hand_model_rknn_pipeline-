@@ -25,14 +25,12 @@ echo "[1/4] convert rtmdet_s_hand_640.onnx -> rknn (calib n=$CALIB_N from calib/
 python scripts/onnx2rknn.py --model rtmdet \
     --onnx onnx/rtmdet_s_hand_640.onnx \
     --out  out/rtmdet_s_hand_640.rknn \
-    --input-size 640 640 \
     --quantize --calib-dir calib/images --calib-n "$CALIB_N"
 
 echo "[2/4] convert rtmpose_hand_256.onnx -> rknn (calib n=$CALIB_N from calib/images)"
 python scripts/onnx2rknn.py --model rtmpose \
     --onnx onnx/rtmpose_hand_256.onnx \
     --out  out/rtmpose_hand_256.rknn \
-    --input-size 256 256 \
     --quantize --calib-dir calib/images --calib-n "$CALIB_N"
 
 echo "[3/4] end-to-end bench: ONNX (det+pose)"

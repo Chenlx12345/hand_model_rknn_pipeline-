@@ -13,14 +13,15 @@ Presets:
 
 Recommended invocation (from repo root):
   python scripts/onnx2rknn.py --model rtmdet  --onnx onnx/rtmdet_s_hand_640.onnx \\
-      --out out/rtmdet_s_hand_640.rknn --input-size 640 640 \\
+      --out out/rtmdet_s_hand_640.rknn \\
       --quantize --calib-dir calib/images --calib-n 50
   python scripts/onnx2rknn.py --model rtmpose --onnx onnx/rtmpose_hand_256.onnx \\
-      --out out/rtmpose_hand_256.rknn --input-size 256 256 \\
+      --out out/rtmpose_hand_256.rknn \\
       --quantize --calib-dir calib/images --calib-n 50
 """
 from __future__ import annotations
 import argparse
+import os
 import random
 import sys
 from pathlib import Path
@@ -71,7 +72,6 @@ def main():
     ap.add_argument("--quantize", action="store_true")
     ap.add_argument("--calib-dir", type=Path)
     ap.add_argument("--calib-n",   type=int, default=50)
-    ap.add_argument("--input-size", type=int, nargs=2, default=[256, 256])
     args = ap.parse_args()
 
     preset = PRESETS[args.model]
@@ -93,41 +93,56 @@ def main():
 
     if not args.onnx.exists():
         sys.exit(f"ONNX not found: {args.onnx}")
-    args.out.parent.mkdir(parents=True, exist_ok=True)
 
-    rknn = RKNN(verbose=True)
-    print(f"[1/4] config (target={args.target})")
-    rknn.config(
-        mean_values=[mean],
-        std_values=[std],
-        target_platform=args.target,
-        quantized_dtype="w8a8",
-        quant_img_RGB2BGR=rgb_to_bgr,
-    )
+    # Resolve every path to absolute BEFORE chdir — toolkit2 internally
+    # dumps `check*_*.onnx` (base_optimize / fuse_ops passes) to cwd with
+    # no API knob to redirect. Switching cwd to out/ traps those dumps
+    # there; absolute paths keep load_onnx / dataset.txt / export_rknn
+    # independent of cwd.
+    onnx_abs      = args.onnx.resolve()
+    out_abs       = args.out.resolve()
+    out_dir       = out_abs.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+    calib_dir_abs = args.calib_dir.resolve() if args.calib_dir else None
 
-    print(f"[2/4] load_onnx: {args.onnx}")
-    if rknn.load_onnx(model=str(args.onnx)) != 0:
-        sys.exit("load_onnx failed")
+    orig_cwd = Path.cwd()
+    os.chdir(out_dir)
+    try:
+        rknn = RKNN(verbose=True)
+        print(f"[1/4] config (target={args.target})")
+        rknn.config(
+            mean_values=[mean],
+            std_values=[std],
+            target_platform=args.target,
+            quantized_dtype="w8a8",
+            quant_img_RGB2BGR=rgb_to_bgr,
+        )
 
-    if args.quantize:
-        if not args.calib_dir:
-            sys.exit("--quantize requires --calib-dir")
-        calib_txt = args.out.parent / f"_calib_{args.out.stem}.txt"
-        n = build_calib_list(args.calib_dir, args.calib_n, calib_txt)
-        print(f"[3/4] build INT8  (calib n={n})")
-        ret = rknn.build(do_quantization=True, dataset=str(calib_txt))
-    else:
-        print(f"[3/4] build (no quantization)")
-        ret = rknn.build(do_quantization=False)
-    if ret != 0:
-        sys.exit("rknn.build failed")
+        print(f"[2/4] load_onnx: {onnx_abs}")
+        if rknn.load_onnx(model=str(onnx_abs)) != 0:
+            sys.exit("load_onnx failed")
 
-    print(f"[4/4] export_rknn -> {args.out}")
-    if rknn.export_rknn(str(args.out)) != 0:
-        sys.exit("export_rknn failed")
-    sz = args.out.stat().st_size / 1024 / 1024
-    print(f"saved {args.out}  ({sz:.1f} MB)")
-    rknn.release()
+        if args.quantize:
+            if not calib_dir_abs:
+                sys.exit("--quantize requires --calib-dir")
+            calib_txt = (out_dir / f"_calib_{out_abs.stem}.txt").resolve()
+            n = build_calib_list(calib_dir_abs, args.calib_n, calib_txt)
+            print(f"[3/4] build INT8  (calib n={n})")
+            ret = rknn.build(do_quantization=True, dataset=str(calib_txt))
+        else:
+            print(f"[3/4] build (no quantization)")
+            ret = rknn.build(do_quantization=False)
+        if ret != 0:
+            sys.exit("rknn.build failed")
+
+        print(f"[4/4] export_rknn -> {out_abs}")
+        if rknn.export_rknn(str(out_abs)) != 0:
+            sys.exit("export_rknn failed")
+        sz = out_abs.stat().st_size / 1024 / 1024
+        print(f"saved {out_abs}  ({sz:.1f} MB)")
+        rknn.release()
+    finally:
+        os.chdir(orig_cwd)
 
 
 if __name__ == "__main__":

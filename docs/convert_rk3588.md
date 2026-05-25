@@ -48,9 +48,43 @@ runtime（`librknnrt.so`）位于 2.3.x 系列。为了保证主机生成的 `.r
 任何下游消费此 .rknn 的运行时必须按同样方式喂图：直接 BGR，不在外部
 预 swap，也不在外部预 normalize（mean/std 已经烘焙进 `.rknn`）。
 
+## 为什么 RKNN 后端要重建图，而不是直接读 `.rknn`
+
+toolkit 2.3.2 有一条不写在 release note 里的硬约束：
+`init_runtime(target=None)`（也就是 PC 模拟器）**拒绝**通过
+`load_rknn(<exported.rknn>)` 加载进来的图。直接试会抛：
+
+```text
+E init_runtime: RKNN model that loaded by 'load_rknn' not support inference
+                on the simulator, please set 'target' first!
+  If you really want to inference on the simulator, use 'load_xxx' & 'build'
+  instead of 'load_rknn'!
+```
+
+`help(RKNN.init_runtime)` 里没有任何参数能绕过这一限制 —— 模拟器**只**
+能跑 `load_onnx + build()` 之后驻留在内存里的那张量化图。
+
+所以 `bench_e2e.py --backend rknn` 接收的 `--det/--pose` 是 **ONNX 路径**
+（与 `--backend onnx` 同源），并强制要求 `--calib-dir/--calib-n` 与
+`onnx2rknn.py` 用的一致。内部流程：
+
+```text
+load_onnx → config(同一份 preset) → build(do_quantization=True, dataset=calib.txt)
+         → init_runtime(target=None)
+```
+
+`scripts/onnx2rknn.py:build_calib_list` 用 `random.seed(0)` 固定取样，
+toolkit 的 INT8 build 在 calib 列表固定时是 deterministic 的，所以
+bench 内重建的 INT8 图与 `out/*.rknn` 落盘那一份**位为一致**（在 toolkit
+build determinism 范围内）—— 足够用来做 PC 端精度回归。
+
+预设源**只能**通过 `from onnx2rknn import PRESETS` 复用，绝不在 bench
+里再写一份；否则 onnx2rknn 改了 preset，bench 跑出来的就不是 `.rknn`
+那张图了，精度比对会撒谎。
+
 ## PC 端 bench 与板端 NPU 的区别
 
-`scripts/bench_e2e.py --backend rknn` 是把转换后的 .rknn 跑在
+`scripts/bench_e2e.py --backend rknn` 是把（重建后的）量化图跑在
 rknn-toolkit2 的 PC 模拟器上（`init_runtime(target=None)`）。模拟器
 是 NPU op graph 的软件仿真：
 

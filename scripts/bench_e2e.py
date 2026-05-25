@@ -13,6 +13,16 @@ NOT the on-board NPU. Its latency is a software-emulation number and
 MUST NOT be quoted as board FPS. Recall/PCK numbers, however, ARE valid:
 the simulator runs the actual quantized graph.
 
+toolkit 2.3.2 constraint: `init_runtime(target=None)` rejects graphs loaded
+via `load_rknn(<exported.rknn>)` ("RKNN model that loaded by 'load_rknn' not
+support inference on the simulator"). The only simulator-compatible path is
+`load_onnx + config + build(do_quantization=True)`. So `--backend rknn`
+takes the *ONNX* paths plus the same `--calib-dir`/`--calib-n`/preset that
+`onnx2rknn.py` would use, rebuilds the INT8 graph in-memory, and feeds the
+PC simulator. With `random.seed(0)` pinning the calib list this is
+deterministically equivalent to the on-disk `.rknn` modulo toolkit build
+determinism — sufficient for PC accuracy regression.
+
 Usage (from repo root):
   python scripts/bench_e2e.py --backend onnx \
       --det  onnx/rtmdet_s_hand_640.onnx \
@@ -20,13 +30,16 @@ Usage (from repo root):
       --ann  eval/val.json --img-dir eval/val_images
 
   python scripts/bench_e2e.py --backend rknn \
-      --det  out/rtmdet_s_hand_640.rknn \
-      --pose out/rtmpose_hand_256.rknn  \
+      --det  onnx/rtmdet_s_hand_640.onnx \
+      --pose onnx/rtmpose_hand_256.onnx  \
+      --det-model rtmdet --pose-model rtmpose \
+      --calib-dir calib/images --calib-n 50 \
       --ann  eval/val.json --img-dir eval/val_images
 """
 from __future__ import annotations
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -40,6 +53,10 @@ from pipeline_lib import (
     topdown_crop_rgb, decode_simcc, affine_kpts,
     match_preds_to_gt,
 )
+# Single source of truth for mean/std/channel-order presets and calib list
+# builder — must match onnx2rknn.py exactly, else PC bench diverges from
+# the on-disk .rknn it's meant to validate.
+from onnx2rknn import PRESETS, build_calib_list
 
 # RTMDet preprocess (BGR; matches onnx2rknn rtmdet preset).
 DET_MEAN = np.array([103.53, 116.28, 123.675], dtype=np.float32)
@@ -85,27 +102,65 @@ class OnnxBackend:
 
 
 class RknnBackend:
-    """rknn-toolkit2 simulator on PC. Mean/std + (optional) RGB-BGR swap
-    are baked into the .rknn, so we hand uint8 NHWC straight in.
+    """rknn-toolkit2 simulator on PC. Rebuilds the INT8 graph from ONNX
+    every run (the only simulator-compatible path in toolkit 2.3.2 —
+    load_rknn() outputs are rejected by init_runtime(target=None)).
 
-    Per onnx2rknn presets:
+    Mean/std + (optional) RGB-BGR swap are baked into the quantized graph,
+    so we hand uint8 NHWC straight in at inference time.
+
+    Per onnx2rknn presets (single source of truth — imported, not copied):
       - rtmdet  : quant_img_RGB2BGR=False -> feed BGR
       - rtmpose : quant_img_RGB2BGR=False -> feed RGB
     """
     label = "rknn-sim"
 
-    def __init__(self, det_path: Path, pose_path: Path):
+    def __init__(self, det_onnx: Path, pose_onnx: Path,
+                 det_preset: dict, pose_preset: dict,
+                 calib_dir: Path, calib_n: int,
+                 target: str, scratch_dir: Path):
+        self.det  = self._build(det_onnx,  det_preset,
+                                calib_dir, calib_n, target, scratch_dir,
+                                tag="det")
+        self.pose = self._build(pose_onnx, pose_preset,
+                                calib_dir, calib_n, target, scratch_dir,
+                                tag="pose")
+
+    @staticmethod
+    def _build(onnx_path: Path, preset: dict,
+               calib_dir: Path, calib_n: int,
+               target: str, scratch_dir: Path, tag: str):
+        # chdir into scratch_dir so toolkit's hardcoded cwd dumps
+        # (check0_base_optimize.onnx / check3_fuse_ops.onnx) land in
+        # out/ rather than polluting the repo root. Same trick as
+        # onnx2rknn.py — there is no API knob for this in 2.3.2.
         from rknn.api import RKNN
-        self.det  = RKNN(verbose=False)
-        if self.det.load_rknn(str(det_path)) != 0:
-            raise SystemExit(f"load_rknn failed: {det_path}")
-        if self.det.init_runtime(target=None) != 0:
-            raise SystemExit("det init_runtime simulator failed")
-        self.pose = RKNN(verbose=False)
-        if self.pose.load_rknn(str(pose_path)) != 0:
-            raise SystemExit(f"load_rknn failed: {pose_path}")
-        if self.pose.init_runtime(target=None) != 0:
-            raise SystemExit("pose init_runtime simulator failed")
+        onnx_abs = onnx_path.resolve()
+        calib_txt = (scratch_dir /
+                     f"_calib_bench_{onnx_path.stem}.txt").resolve()
+        n = build_calib_list(calib_dir, calib_n, calib_txt)
+        print(f"[{tag}] rebuild INT8 from {onnx_path.name} "
+              f"(calib n={n} from {calib_dir})")
+        orig_cwd = Path.cwd()
+        os.chdir(scratch_dir)
+        try:
+            rk = RKNN(verbose=False)
+            rk.config(
+                mean_values=[preset["mean"]],
+                std_values=[preset["std"]],
+                target_platform=target,
+                quantized_dtype="w8a8",
+                quant_img_RGB2BGR=preset["rgb_to_bgr"],
+            )
+            if rk.load_onnx(model=str(onnx_abs)) != 0:
+                raise SystemExit(f"load_onnx failed: {onnx_abs}")
+            if rk.build(do_quantization=True, dataset=str(calib_txt)) != 0:
+                raise SystemExit(f"rknn.build failed: {onnx_abs}")
+            if rk.init_runtime(target=None) != 0:
+                raise SystemExit(f"{tag} init_runtime simulator failed")
+        finally:
+            os.chdir(orig_cwd)
+        return rk
 
     def infer_det(self, lb_bgr_uint8: np.ndarray):
         t = time.perf_counter()
@@ -121,18 +176,19 @@ class RknnBackend:
         self.det.release(); self.pose.release()
 
 
-BACKENDS = {"onnx": OnnxBackend, "rknn": RknnBackend}
+BACKENDS = ("onnx", "rknn")
 
 
 # ─── main ─────────────────────────────────────────────────────────────────
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--backend", choices=list(BACKENDS), required=True)
+    ap.add_argument("--backend", choices=BACKENDS, required=True)
     ap.add_argument("--det",  type=Path, required=True,
-                    help="detector model (onnx/*.onnx or out/*.rknn)")
+                    help="detector ONNX path (both backends — RKNN backend "
+                         "rebuilds INT8 from ONNX, see module docstring)")
     ap.add_argument("--pose", type=Path, required=True,
-                    help="pose model     (onnx/*.onnx or out/*.rknn)")
+                    help="pose ONNX path (both backends)")
     ap.add_argument("--ann",     type=Path, required=True)
     ap.add_argument("--img-dir", type=Path, required=True)
     ap.add_argument("--n",       type=int, default=0,
@@ -142,6 +198,17 @@ def main():
                     help="letterbox target (rtmdet_s_hand_640 -> 640)")
     ap.add_argument("--det-score-thr", type=float, default=0.4)
     ap.add_argument("--det-nms-thr",   type=float, default=0.6)
+    # rknn-only
+    ap.add_argument("--det-model",  choices=list(PRESETS), default="rtmdet",
+                    help="rknn-only: preset key for detector")
+    ap.add_argument("--pose-model", choices=list(PRESETS), default="rtmpose",
+                    help="rknn-only: preset key for pose")
+    ap.add_argument("--calib-dir", type=Path,
+                    help="rknn-only: calibration image root (required)")
+    ap.add_argument("--calib-n",   type=int, default=50,
+                    help="rknn-only: calibration sample count")
+    ap.add_argument("--target",    default="rk3588",
+                    help="rknn-only: target_platform for quant config")
     args = ap.parse_args()
 
     for p in (args.det, args.pose, args.ann, args.img_dir):
@@ -149,7 +216,26 @@ def main():
             sys.exit(f"FAIL: missing: {p}")
 
     print(f"[load] backend={args.backend}  det={args.det.name}  pose={args.pose.name}")
-    backend = BACKENDS[args.backend](args.det, args.pose)
+    if args.backend == "onnx":
+        backend = OnnxBackend(args.det, args.pose)
+    else:  # rknn — rebuild INT8 in-memory from ONNX (toolkit 2.3.2 simulator path)
+        if args.calib_dir is None:
+            sys.exit("FAIL: --backend rknn requires --calib-dir + --calib-n")
+        if not args.calib_dir.exists():
+            sys.exit(f"FAIL: missing: {args.calib_dir}")
+        # Trap toolkit cwd-relative dumps (check*_*.onnx, _calib_*.txt)
+        # under out/ regardless of the cwd the user invoked us from.
+        scratch = (HERE.parent / "out").resolve()
+        scratch.mkdir(parents=True, exist_ok=True)
+        backend = RknnBackend(
+            det_onnx=args.det, pose_onnx=args.pose,
+            det_preset=PRESETS[args.det_model],
+            pose_preset=PRESETS[args.pose_model],
+            calib_dir=args.calib_dir.resolve(),
+            calib_n=args.calib_n,
+            target=args.target,
+            scratch_dir=scratch,
+        )
 
     coco = json.load(open(args.ann))
     img_meta = {im["id"]: im for im in coco["images"]}

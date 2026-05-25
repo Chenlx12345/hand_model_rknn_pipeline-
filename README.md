@@ -98,9 +98,16 @@ python scripts/bench_e2e.py --backend onnx \
     --ann  eval/val.json --img-dir eval/val_images
 
 # 端到端 PC 评测：转换后的 RKNN（toolkit2 模拟器）
+# 注意：toolkit 2.3.2 的 PC 模拟器 **不能** 加载 .rknn 文件
+# （init_runtime(target=None) 拒绝 load_rknn 出来的图）。
+# 这里 --det / --pose 传 ONNX 路径，bench 内部用同一份 preset + calib
+# 重建 INT8 图，再喂给 simulator。calib 列表用 random.seed(0) 固定，
+# 与 onnx2rknn.py 落盘的 .rknn 是同一份量化图。
 python scripts/bench_e2e.py --backend rknn \
-    --det  out/rtmdet_s_hand_640.rknn \
-    --pose out/rtmpose_hand_256.rknn  \
+    --det  onnx/rtmdet_s_hand_640.onnx \
+    --pose onnx/rtmpose_hand_256.onnx  \
+    --det-model rtmdet --pose-model rtmpose \
+    --calib-dir calib/images --calib-n 50 \
     --ann  eval/val.json --img-dir eval/val_images
 ```
 

@@ -40,10 +40,15 @@ python scripts/bench_e2e.py --backend onnx \
     --ann  "$EVAL_ANN" \
     --img-dir "$EVAL_IMG_DIR"
 
-echo "[4/4] end-to-end bench: RKNN (det+pose, PC simulator — NOT board)"
+echo "[4/4] end-to-end bench: RKNN (PC simulator — rebuilds INT8 from ONNX)"
+# toolkit 2.3.2 init_runtime(target=None) refuses load_rknn() graphs, so we
+# re-run load_onnx + build(do_quantization) with the same preset/calib as
+# step [1]/[2]. Determinism comes from random.seed(0) in build_calib_list.
 python scripts/bench_e2e.py --backend rknn \
-    --det  out/rtmdet_s_hand_640.rknn \
-    --pose out/rtmpose_hand_256.rknn \
+    --det  onnx/rtmdet_s_hand_640.onnx \
+    --pose onnx/rtmpose_hand_256.onnx \
+    --det-model rtmdet --pose-model rtmpose \
+    --calib-dir calib/images --calib-n "$CALIB_N" \
     --ann  "$EVAL_ANN" \
     --img-dir "$EVAL_IMG_DIR"
 

@@ -54,18 +54,19 @@ already part of the `.rknn`).
 
 ## Promoting an artefact to deployment
 
-`out/*.rknn` is gitignored. To deploy:
+`out/*.rknn` is gitignored. To deploy, copy them to wherever the C++
+runtime / on-board benchmark expects them (e.g. an `external/ant_algorithm/rknn/`
+directory in the parent superproject, if/when that dir exists):
 
 ```sh
-cp out/rtmdet_s_hand_640.rknn ../rknn/
-cp out/rtmpose_hand_256.rknn  ../rknn/
+cp out/rtmdet_s_hand_640.rknn <deploy_dir>/
+cp out/rtmpose_hand_256.rknn  <deploy_dir>/
 ```
 
-Then commit the new files **inside the parent `external/ant_algorithm`
-submodule** (not inside this sub-submodule), so the board-side
-`serial_benchmark.py` and the C++ runtime pick them up.
+Then commit the new files in the parent superproject (not in this
+sub-submodule), so the board-side `serial_benchmark.py` and the C++
+runtime pick them up.
 
-The detector path changes from
-`../rknn/rtmdet_nano_hand_320.rknn` to
-`../rknn/rtmdet_s_hand_640.rknn`. Update every consumer (Python bench,
-C++ loader, any hard-coded path strings).
+The detector model changes from `rtmdet_nano_hand_320.rknn` (the legacy
+on-board file) to `rtmdet_s_hand_640.rknn`. Update every consumer (Python
+bench, C++ loader, any hard-coded path strings).

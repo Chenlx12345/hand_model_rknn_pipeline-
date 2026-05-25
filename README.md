@@ -11,7 +11,7 @@ Two models per turn:
 | det   | rtmdet_s_hand_640.onnx     | 640x640  | rtmdet  | BGR     |
 | pose  | rtmpose_hand_256.onnx      | 256x256  | rtmpose | RGB     |
 
-Output `.rknn` files land in `out/`; promote them to `../rknn/` for deployment.
+Output `.rknn` files land in `out/`; copy them out to your runtime/deployment dir.
 
 ## Repository layout
 
@@ -21,8 +21,10 @@ Output `.rknn` files land in `out/`; promote them to `../rknn/` for deployment.
 ├── calib/
 │   ├── source_pool/  in-repo calibration pool (956 hand crops, ~200MB)
 │   └── images/       per-build sampled subset (gitignored)
-├── eval/         held-out artefacts produced by this pipeline only
-│   └── onnx_ref_kpts.npz   golden reference from compare_pose
+├── eval/         held-out accuracy-check set (bundled in-repo)
+│   ├── val.json          COCO annotations (34 images)
+│   ├── val_images/       34 validation images
+│   └── onnx_ref_kpts.npz golden reference from compare_pose
 ├── out/          conversion artefacts (gitignored)
 ├── scripts/      python tools (see below)
 ├── docs/         additional notes
@@ -30,11 +32,10 @@ Output `.rknn` files land in `out/`; promote them to `../rknn/` for deployment.
 └── convert_all.sh
 ```
 
-Evaluation data (val.json + val_images/) is **not** kept here — it lives at
-`../rknn/` in the parent superproject (`external/ant_algorithm/rknn/`). The
-compare scripts reference it through that relative path; override at runtime
-with `EVAL_ANN=... EVAL_IMG_DIR=... ./convert_all.sh` if the parent layout
-changes.
+The repo is **self-contained**: `./convert_all.sh` runs the full pipeline
+without needing any external data — calibration source (`calib/source_pool/`),
+the input ONNX models (`onnx/`), and the eval set (`eval/`) are all bundled
+in-tree.
 
 `calib/source_pool/` is a fixed-population pool: `prepare_calib.py` samples
 from it into `calib/images/` (gitignored) for each build, ensuring that
@@ -95,23 +96,26 @@ python scripts/onnx2rknn.py --model rtmpose \
     --quantize --calib-dir calib/images --calib-n 50
 
 python scripts/compare_det.py  --onnx onnx/rtmdet_s_hand_640.onnx \
-    --ann ../rknn/val.json --img-dir ../rknn/val_images
+    --ann eval/val.json --img-dir eval/val_images
 python scripts/compare_pose.py --onnx onnx/rtmpose_hand_256.onnx \
-    --ann ../rknn/val.json --img-dir ../rknn/val_images \
+    --ann eval/val.json --img-dir eval/val_images \
     --save-ref-kpts eval/onnx_ref_kpts.npz
 ```
 
 ## Deploying to the board
 
 ```sh
-cp out/rtmdet_s_hand_640.rknn ../rknn/
-cp out/rtmpose_hand_256.rknn  ../rknn/
-# scp ../rknn/*.rknn <board>:/path/to/runtime/
+# Promote the artefacts wherever the C++ runtime / serial_benchmark.py
+# expects to find them (typically external/ant_algorithm/rknn/ in the
+# parent superproject — re-create that dir if it doesn't exist):
+cp out/rtmdet_s_hand_640.rknn <deploy_dir>/
+cp out/rtmpose_hand_256.rknn  <deploy_dir>/
+# scp <deploy_dir>/*.rknn <board>:/path/to/runtime/
 ```
 
 Detector model name changes from `rtmdet_nano_hand_320.rknn` (the legacy
-one shipped under `../rknn/`) to `rtmdet_s_hand_640.rknn`. Update the C++
-loader paths and the letterbox input size (320 -> 640) accordingly.
+on-board file) to `rtmdet_s_hand_640.rknn`. Update the C++ loader paths
+and the letterbox input size (320 -> 640) accordingly.
 
 ## Notes / gotchas
 
@@ -122,4 +126,4 @@ loader paths and the letterbox input size (320 -> 640) accordingly.
   keypoints. It is the golden reference for pose accuracy checks; it is
   **not** the INT8 calibration set.
 - Quantization is `w8a8`; this is hard-coded in `scripts/onnx2rknn.py`.
-- `out/` is gitignored; the artefacts live under `../rknn/` for deployment.
+- `out/` is gitignored; promote the artefacts to your runtime/deployment dir manually.

@@ -15,10 +15,11 @@ fi
 
 CALIB_N=${CALIB_N:-50}
 
-# Eval data (val.json + val_images) is owned by the parent superproject at
-# ../rknn/, so reference it there instead of duplicating into this submodule.
-EVAL_ANN=${EVAL_ANN:-../rknn/val.json}
-EVAL_IMG_DIR=${EVAL_IMG_DIR:-../rknn/val_images}
+# Eval data (val.json + val_images) is bundled into this submodule under
+# eval/ — the pipeline is fully self-contained. Override via env if you
+# point at a different held-out set.
+EVAL_ANN=${EVAL_ANN:-eval/val.json}
+EVAL_IMG_DIR=${EVAL_IMG_DIR:-eval/val_images}
 
 echo "[1/5] prepare calibration subset (n=$CALIB_N from calib/source_pool)"
 python scripts/prepare_calib.py --src calib/source_pool --dst calib/images --n "$CALIB_N"
@@ -51,4 +52,4 @@ python scripts/compare_pose.py \
     --save-ref-kpts eval/onnx_ref_kpts.npz
 
 echo "PASS: rknn ready under out/"
-echo "  next: cp out/*.rknn ../rknn/   # promote to deployment dir"
+echo "  next: cp out/*.rknn <deploy_dir>/   # promote to your runtime/deployment dir"

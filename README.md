@@ -1,7 +1,10 @@
-# hand_det_pose_convert
+# hand_model_rknn_pipeline
 
 主机侧 ONNX → RKNN 转换流水线 + PC 端精度 / 速度评测。目标平台 RK3588
 （librknnrt 2.3.x）。
+
+作为主仓库子模块使用时，默认路径为
+`external/hand_model_rknn_pipeline`。
 
 | 阶段 | ONNX                       | 输入     | preset  | 通道顺序 |
 | ---- | -------------------------- | -------- | ------- | -------- |

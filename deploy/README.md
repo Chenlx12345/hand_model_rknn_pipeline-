@@ -12,7 +12,7 @@ PCK@5/10/20、以及板端实测延迟。
 ## 编译
 
 ```sh
-cd external/ant_algorithm/hand_det_pose_convert/deploy
+cd external/hand_model_rknn_pipeline/deploy
 ./build.sh
 # 产物：build/bench_e2e_rknn  (ELF 64-bit LSB, aarch64)
 ```

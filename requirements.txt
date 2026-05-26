@@ -1,4 +1,4 @@
-# Host-side conversion environment for hand_det_pose_convert.
+# Host-side conversion environment for hand_model_rknn_pipeline.
 # Python 3.10. Install order matters: rknn-toolkit2 wheel first (it pins
 # tight ranges on numpy/protobuf), then onnx must be downgraded to 1.16.1
 # because 1.17+ removed onnx.mapping which rknn-toolkit2 still imports.

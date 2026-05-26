@@ -4,7 +4,7 @@
 #   cmake -DCMAKE_TOOLCHAIN_FILE=<repo>/cmake/toolchain-rk3588.cmake -B build .
 #   cmake --build build -j
 cmake_minimum_required(VERSION 3.16)
-project(hand_det_pose_deploy CXX)
+project(hand_model_rknn_pipeline_deploy CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -64,8 +64,8 @@ set(OPENCV_LIBS
 message(STATUS "OpenCV root  : ${OPENCV_ROOT}")
 
 # ── nlohmann/json (already vendored at repo's external/) ─────────────────
-# external/nlohmann_json relative path from this CMakeLists is ../../../../external
-get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../.." ABSOLUTE)
+# external/nlohmann_json relative path from this CMakeLists is ../../../
+get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 set(NLOHMANN_INCLUDE_DIR "${REPO_ROOT}/external/nlohmann_json/single_include")
 if(NOT EXISTS "${NLOHMANN_INCLUDE_DIR}/nlohmann/json.hpp")
     message(FATAL_ERROR "nlohmann/json.hpp not found at ${NLOHMANN_INCLUDE_DIR}")

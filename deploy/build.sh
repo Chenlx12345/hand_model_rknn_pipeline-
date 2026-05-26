@@ -4,7 +4,7 @@
 set -e
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-REPO_ROOT=$(cd "$SCRIPT_DIR/../../../.." && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/../../.." && pwd)
 TOOLCHAIN="$REPO_ROOT/cmake/toolchain-rk3588.cmake"
 BUILD_DIR="$SCRIPT_DIR/build"
 

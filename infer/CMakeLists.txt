@@ -1,10 +1,14 @@
-# bench_e2e_rknn — board-side end-to-end validation of converted RKNN models.
+# hand_pipeline — board-side RKNN inference library (RTMDet + RTMPose).
 #
-# Cross-compile with the main repo toolchain:
+# Cross-compile via the main repo toolchain:
 #   cmake -DCMAKE_TOOLCHAIN_FILE=<repo>/cmake/toolchain-rk3588.cmake -B build .
 #   cmake --build build -j
+#
+# Standalone configure builds tests by default; downstream consumers integrating
+# via add_subdirectory(infer) get the lib only unless they explicitly set
+# -DHAND_PIPELINE_BUILD_TESTS=ON.
 cmake_minimum_required(VERSION 3.16)
-project(hand_model_rknn_pipeline_deploy CXX)
+project(hand_pipeline CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,7 +20,7 @@ endif()
 add_compile_options(-Wall -Wextra -O2)
 
 # 路径来源：toolchain-rk3588.cmake include 了 local-config.cmake，
-# 因此 DAS_EGO_SDK_PATH 在此处一定已就绪。
+# DAS_EGO_SDK_PATH 在 toolchain 加载完成后必然就绪。
 if(NOT DEFINED DAS_EGO_SDK_PATH OR DAS_EGO_SDK_PATH STREQUAL "")
     message(FATAL_ERROR
         "DAS_EGO_SDK_PATH not set. Pass -DCMAKE_TOOLCHAIN_FILE pointing to "
@@ -26,7 +30,7 @@ endif()
 set(SYSROOT
     "${DAS_EGO_SDK_PATH}/buildroot/output/rockchip_genrobot_rk3588/host/aarch64-buildroot-linux-gnu/sysroot")
 
-# ── RKNN runtime ─────────────────────────────────────────────────────────
+# ── RKNN runtime (sysroot) ───────────────────────────────────────────────
 set(RKNN_INCLUDE_DIR "${SYSROOT}/usr/include/rknn")
 set(RKNN_LIB         "${SYSROOT}/usr/lib/librknnrt.so")
 if(NOT EXISTS "${RKNN_INCLUDE_DIR}/rknn_api.h")
@@ -63,37 +67,43 @@ set(OPENCV_LIBS
 )
 message(STATUS "OpenCV root  : ${OPENCV_ROOT}")
 
-# ── nlohmann/json (already vendored at repo's external/) ─────────────────
-# external/nlohmann_json relative path from this CMakeLists is ../../../
-get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
-set(NLOHMANN_INCLUDE_DIR "${REPO_ROOT}/external/nlohmann_json/single_include")
-if(NOT EXISTS "${NLOHMANN_INCLUDE_DIR}/nlohmann/json.hpp")
-    message(FATAL_ERROR "nlohmann/json.hpp not found at ${NLOHMANN_INCLUDE_DIR}")
-endif()
-
-# ── target ───────────────────────────────────────────────────────────────
-add_executable(bench_e2e_rknn
-    src/main.cpp
+# ── library ──────────────────────────────────────────────────────────────
+add_library(hand_pipeline STATIC
     src/rknn_session.cpp
     src/rtmdet.cpp
     src/rtmpose.cpp
-    src/eval.cpp
-)
-target_include_directories(bench_e2e_rknn PRIVATE
-    src
-    ${RKNN_INCLUDE_DIR}
-    ${OPENCV_INCLUDE_DIR}
-    ${NLOHMANN_INCLUDE_DIR}
-)
-target_link_libraries(bench_e2e_rknn PRIVATE
-    ${RKNN_LIB}
-    ${OPENCV_LIBS}
-    pthread
-    dl
-    rt
-    m
+    src/hand_pipeline.cpp
 )
 
-set_target_properties(bench_e2e_rknn PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+# PUBLIC: 公共头直接 #include <opencv2/...> 与 <rknn_api.h>，
+# 任何 link 此库的目标都需要这些路径与库。
+target_include_directories(hand_pipeline
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${RKNN_INCLUDE_DIR}
+        ${OPENCV_INCLUDE_DIR}
 )
+
+target_link_libraries(hand_pipeline
+    PUBLIC
+        ${RKNN_LIB}
+        ${OPENCV_LIBS}
+        pthread
+        dl
+        rt
+        m
+)
+
+# ── tests ────────────────────────────────────────────────────────────────
+# 独立配置 infer/ 时默认开启；被主仓库 add_subdirectory 集成时默认关闭
+# （避免拖入 nlohmann/json 与 bench 可执行）。
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(_HAND_PIPELINE_TESTS_DEFAULT ON)
+else()
+    set(_HAND_PIPELINE_TESTS_DEFAULT OFF)
+endif()
+option(HAND_PIPELINE_BUILD_TESTS "Build hand_pipeline tests"
+       ${_HAND_PIPELINE_TESTS_DEFAULT})
+if(HAND_PIPELINE_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()

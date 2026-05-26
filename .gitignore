@@ -2,6 +2,7 @@
 out/*.rknn
 **/_calib_*.txt
 deploy/build/
+infer/build/
 # rknn-toolkit2 build-pass intermediate dumps (hardcoded to cwd by toolkit)
 check*_*.onnx
 

@@ -4,11 +4,15 @@
 #include "eval.h"
 #include "rtmdet.h"
 #include "rtmpose.h"
+#include "viz_lib.hpp"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include <sys/stat.h>   // mkdir
+
 #include <algorithm>
+#include <cctype>       // std::toupper
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -143,6 +147,14 @@ int main(int argc, char** argv) {
     for (const auto& r : records) n_gt_total += static_cast<int>(r.gts.size());
     std::printf("[prep] %zu images, %d GT hands\n", records.size(), n_gt_total);
 
+    // 可视化输出: 与 val_images/ 平级落到 ${eval_dir}/viz/, 与主机端
+    // out/viz/ 同构布局; EEXIST 静默吸收, 等价于 mkdir -p。
+    const std::string viz_dir = args.eval_dir + "/viz";
+    ::mkdir(viz_dir.c_str(), 0755);
+
+    std::string viz_label = kBackendLabel;
+    for (char& c : viz_label) c = static_cast<char>(std::toupper(c));
+
     // ── pre-decode all images (separate disk I/O from inference) ──
     struct LoadedImage { std::string fname; cv::Mat img; const ImageRecord* rec; };
     std::vector<LoadedImage> imgs;
@@ -189,6 +201,12 @@ int main(int argc, char** argv) {
             ++n_pose_calls;
         }
         e2e_lats.push_back(now_ms() - t_start);
+
+        // 板端可视化: bbox + 21 kpt + 骨架, 写入 ${eval_dir}/viz/{fname}.jpg
+        // 计时之后再画, 不污染 e2e 延迟数字 (与 scripts/bench_e2e.py 一致)。
+        cv::Mat vis = hand_deploy::viz::DrawHands(
+            li.img, preds, kpts_per_pred, viz_label);
+        cv::imwrite(viz_dir + "/" + li.fname, vis);
 
         // 匹配 + PCK
         const auto pairs = hand_deploy::MatchPredsToGt(preds, li.rec->gts);

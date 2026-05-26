@@ -17,6 +17,7 @@ endif()
 add_executable(unit_bench_e2e_test
     unit_bench_e2e_test.cpp
     eval.cpp
+    viz_lib.cpp
 )
 target_include_directories(unit_bench_e2e_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}    # for "eval.h"

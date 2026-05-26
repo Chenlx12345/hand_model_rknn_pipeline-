@@ -1,16 +1,8 @@
-"""End-to-end PC-side benchmark: rtmdet -> rtmpose, single backend.
+"""End-to-end PC bench: RTMDet -> RTMPose on ONNX runtime or RKNN toolkit2 simulator.
 
-`--backend rknn` runs on toolkit2's PC simulator — recall/PCK valid, latency NOT
-representative of board NPU. RKNN path takes ONNX paths + `--calib-dir` and
-rebuilds the INT8 graph in-memory (toolkit 2.3.2 simulator rejects load_rknn).
-
-  python scripts/bench_e2e.py --backend rknn \
-      --det  onnx/rtmdet_s_hand_640.onnx \
-      --pose onnx/rtmpose_hand_256.onnx  \
-      --det-model rtmdet --pose-model rtmpose \
-      --calib-dir datasets/calib/images \
-      --ann  datasets/eval/val.json --img-dir datasets/eval/val_images
-"""
+See README for CLI. Toolkit 2.3.2 simulator rebuilds INT8 from ONNX every run
+(init_runtime(target=None) rejects load_rknn outputs), so RKNN latency here is
+not representative of board NPU — only recall/PCK are."""
 from __future__ import annotations
 import argparse
 import json
@@ -28,15 +20,12 @@ from pipeline_lib import (
     topdown_crop_rgb, decode_simcc, affine_kpts,
     match_preds_to_gt,
 )
-# Single source of truth for mean/std/channel-order presets and calib list
-# builder — must match onnx2rknn.py exactly, else PC bench diverges from
-# the on-disk .rknn it's meant to validate.
+from viz_lib import draw_hands
+# Imported from onnx2rknn so the in-memory rebuild matches the on-disk .rknn.
 from onnx2rknn import PRESETS, build_calib_list
 
-# RTMDet preprocess (BGR; matches onnx2rknn rtmdet preset).
 DET_MEAN = np.array([103.53, 116.28, 123.675], dtype=np.float32)
 DET_STD  = np.array([57.375, 57.12,  58.395 ], dtype=np.float32)
-# RTMPose preprocess (RGB; matches onnx2rknn rtmpose preset).
 POSE_MEAN = np.array([123.675, 116.28, 103.53], dtype=np.float32)
 POSE_STD  = np.array([58.395,  57.12,  57.375], dtype=np.float32)
 
@@ -77,17 +66,8 @@ class OnnxBackend:
 
 
 class RknnBackend:
-    """rknn-toolkit2 simulator on PC. Rebuilds the INT8 graph from ONNX
-    every run (the only simulator-compatible path in toolkit 2.3.2 —
-    load_rknn() outputs are rejected by init_runtime(target=None)).
-
-    Mean/std + (optional) RGB-BGR swap are baked into the quantized graph,
-    so we hand uint8 NHWC straight in at inference time.
-
-    Per onnx2rknn presets (single source of truth — imported, not copied):
-      - rtmdet  : quant_img_RGB2BGR=False -> feed BGR
-      - rtmpose : quant_img_RGB2BGR=False -> feed RGB
-    """
+    """rknn-toolkit2 simulator on PC. Rebuilds the INT8 graph from ONNX every run
+    because toolkit 2.3.2's init_runtime(target=None) rejects load_rknn outputs."""
     label = "rknn-sim"
 
     def __init__(self, det_onnx: Path, pose_onnx: Path,
@@ -161,12 +141,13 @@ def run_one(backend, rec, score_thr: float, nms_thr: float):
 
     Returns:
         boxes_full      : (N,4) xyxy in original image coords
+        scores          : (N,) detector confidences, aligned with boxes
         kpts_full       : dict[pi] -> (21,2) keypoints in original image coords
         det_ms          : float, detector latency
         pose_ms_list    : list[float], one entry per detected hand
     """
     cls_o, reg_o, det_ms = backend.infer_det(rec["lb"])
-    boxes_lb, _ = decode_rtmdet(
+    boxes_lb, scores = decode_rtmdet(
         cls_o, reg_o, score_thr=score_thr, nms_thr=nms_thr)
     boxes_full = unletterbox_bboxes(
         boxes_lb, rec["scale"], rec["x0"], rec["y0"])
@@ -176,9 +157,9 @@ def run_one(backend, rec, score_thr: float, nms_thr: float):
         crop, M_inv = topdown_crop_rgb(rec["img"], box)
         sx, sy, pose_ms = backend.infer_pose(crop)
         pose_ms_list.append(pose_ms)
-        kpts_256, _ = decode_simcc(sx, sy)
+        kpts_256 = decode_simcc(sx, sy)
         kpts_full[pi] = affine_kpts(kpts_256, M_inv)
-    return boxes_full, kpts_full, det_ms, pose_ms_list
+    return boxes_full, scores, kpts_full, det_ms, pose_ms_list
 
 
 # ─── `both` comparison reporter ───────────────────────────────────────────
@@ -191,11 +172,12 @@ def _new_stats():
 
 
 def _aggregate(backend, rec, gt_xyxy, gt_kpts_list, s,
-               score_thr, nms_thr):
+               score_thr, nms_thr, viz_label: str | None = None):
     """Run one backend over one image; fold latencies + matches + kpt
-    errors into stats dict `s`. Returns nothing — pure accumulator."""
+    errors into stats dict `s`. Returns the annotated viz image (BGR) so
+    `_run_compare` can hstack ONNX|RKNN side-by-side."""
     t0 = time.perf_counter()
-    boxes, kpts, det_ms, pose_ms_list = run_one(
+    boxes, scores, kpts, det_ms, pose_ms_list = run_one(
         backend, rec, score_thr, nms_thr)
     e2e_ms = (time.perf_counter() - t0) * 1000.0
 
@@ -211,6 +193,9 @@ def _aggregate(backend, rec, gt_xyxy, gt_kpts_list, s,
         for k in range(min(21, len(gk))):
             if gk[k, 2] > 0:  # visible
                 s["pck"].append(float(np.linalg.norm(kf[k] - gk[k, :2])))
+
+    return draw_hands(rec["img"], boxes, kpts,
+                      scores=scores, label=viz_label)
 
 
 def _print_summary(stats, n_gt_total, n_images):
@@ -239,7 +224,8 @@ def _print_summary(stats, n_gt_total, n_images):
 
 
 def _run_compare(b_onnx, b_rknn, records, *,
-                 score_thr: float, nms_thr: float, warmup: int):
+                 score_thr: float, nms_thr: float, warmup: int,
+                 viz_dir):
     # warmup both — first record only, mirrors single-backend path
     r0 = records[0]
     for _ in range(warmup):
@@ -264,10 +250,15 @@ def _run_compare(b_onnx, b_rknn, records, *,
         gt_xyxy = np.array(gt_xyxy_list, dtype=np.float32)
         n_gt_total += len(gt_kpts_list)
 
-        _aggregate(b_onnx, rec, gt_xyxy, gt_kpts_list, stats["onnx"],
-                   score_thr, nms_thr)
-        _aggregate(b_rknn, rec, gt_xyxy, gt_kpts_list, stats["rknn"],
-                   score_thr, nms_thr)
+        vis_onnx = _aggregate(b_onnx, rec, gt_xyxy, gt_kpts_list,
+                              stats["onnx"], score_thr, nms_thr,
+                              viz_label="ONNX")
+        vis_rknn = _aggregate(b_rknn, rec, gt_xyxy, gt_kpts_list,
+                              stats["rknn"], score_thr, nms_thr,
+                              viz_label="RKNN")
+        # Same source `rec["img"]` -> identical H/W; hstack safe.
+        cv2.imwrite(str(viz_dir / rec["fname"]),
+                    np.hstack([vis_onnx, vis_rknn]))
 
     b_onnx.release(); b_rknn.release()
     _print_summary(stats, n_gt_total, len(records))
@@ -352,6 +343,11 @@ def main():
     n_gt_total = sum(len(gt_by_image[f]) for f in files)
     print(f"[prep] {len(files)} images, {n_gt_total} GT hands")
 
+    # Visualization sink — always on. Lives next to .rknn / calib txt but
+    # in its own subdir so it doesn't get mixed up with model artifacts.
+    viz_dir = (HERE.parent / "out" / "viz").resolve()
+    viz_dir.mkdir(parents=True, exist_ok=True)
+
     # Pre-letterbox once per image; we reuse the same buffer across warmup
     # and timed pass so disk I/O isn't billed against the model.
     records = []
@@ -371,7 +367,7 @@ def main():
         _run_compare(
             backend_onnx, backend_rknn, records,
             score_thr=args.det_score_thr, nms_thr=args.det_nms_thr,
-            warmup=args.warmup,
+            warmup=args.warmup, viz_dir=viz_dir,
         )
         return
 
@@ -398,7 +394,7 @@ def main():
 
         cls_o, reg_o, det_ms = backend.infer_det(rec["lb"])
         det_lats.append(det_ms)
-        boxes_lb, _ = decode_rtmdet(
+        boxes_lb, scores = decode_rtmdet(
             cls_o, reg_o,
             score_thr=args.det_score_thr, nms_thr=args.det_nms_thr)
         boxes = unletterbox_bboxes(
@@ -421,10 +417,18 @@ def main():
             sx, sy, pose_ms = backend.infer_pose(crop)
             pose_lats.append(pose_ms)
             n_hands_total += 1
-            kpts_256, _ = decode_simcc(sx, sy)
+            kpts_256 = decode_simcc(sx, sy)
             kpts_full_per_pred[pi] = affine_kpts(kpts_256, M_inv)
 
         e2e_lats.append((time.perf_counter() - t_start) * 1000.0)
+
+        # Draw bbox + 21 kpts + skeleton onto original image, dump to
+        # out/viz/. Done AFTER e2e timer to keep latency numbers clean.
+        cv2.imwrite(
+            str(viz_dir / rec["fname"]),
+            draw_hands(rec["img"], boxes, kpts_full_per_pred,
+                       scores=scores, label=backend.label.upper()),
+        )
 
         # accuracy on matched pairs only
         pairs = match_preds_to_gt(boxes, gt_xyxy, iou_thr=0.5)

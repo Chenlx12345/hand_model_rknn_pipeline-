@@ -22,8 +22,7 @@
 │       ├── val.json          COCO 标注（184 张图 / 296 个手部实例）
 │       └── val_images/       34 张验证图（val.json 的子集）
 ├── out/              转换产物（gitignored）
-├── scripts/          onnx2rknn / bench_e2e / pipeline_lib
-├── docs/
+├── scripts/          onnx2rknn / bench_e2e / pipeline_lib / viz_lib
 ├── third_party/      rknn-toolkit2 submodule
 └── convert_all.sh
 ```
@@ -77,14 +76,9 @@ python scripts/onnx2rknn.py --model rtmpose \
     --out  out/rtmpose_hand_256.rknn   \
     --quantize --calib-dir datasets/calib/images
 
-# 端到端 PC 评测：ONNX 基线
-python scripts/bench_e2e.py --backend onnx \
-    --det  onnx/rtmdet_s_hand_640.onnx \
-    --pose onnx/rtmpose_hand_256.onnx  \
-    --ann  datasets/eval/val.json --img-dir datasets/eval/val_images
-
-# 端到端 PC 评测：RKNN（toolkit2 模拟器，从 ONNX 重建 INT8）
-python scripts/bench_e2e.py --backend rknn \
+# 端到端 PC 评测：ONNX 基线 + RKNN 模拟器一次跑完，并列输出 recall / PCK / 延迟，
+# 同时在 out/viz/ 下生成 ONNX | RKNN 左右拼接图，直接看 INT8 量化漂移。
+python scripts/bench_e2e.py --backend both \
     --det  onnx/rtmdet_s_hand_640.onnx \
     --pose onnx/rtmpose_hand_256.onnx  \
     --det-model rtmdet --pose-model rtmpose \
@@ -92,7 +86,7 @@ python scripts/bench_e2e.py --backend rknn \
     --ann  datasets/eval/val.json --img-dir datasets/eval/val_images
 ```
 
-ONNX vs RKNN：recall / PCK@5 差 ≤ 5pp 为预期。
+ONNX vs RKNN：recall / PCK@5 差 ≤ 5pp 为预期（`--backend both` 表格列出两者对比）。
 
 ## 部署到开发板
 
@@ -100,5 +94,3 @@ ONNX vs RKNN：recall / PCK@5 差 ≤ 5pp 为预期。
 cp out/rtmdet_s_hand_640.rknn <deploy_dir>/
 cp out/rtmpose_hand_256.rknn  <deploy_dir>/
 ```
-
-下游消费方需同步 letterbox 输入尺寸（320 → 640）。

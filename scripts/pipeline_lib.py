@@ -121,8 +121,7 @@ def decode_simcc(sx, sy):
     sx, sy = sx[0], sy[0]
     kx = sx.argmax(axis=-1).astype(np.float32) / SIMCC_SPLIT
     ky = sy.argmax(axis=-1).astype(np.float32) / SIMCC_SPLIT
-    conf = np.minimum(sx.max(axis=-1), sy.max(axis=-1))
-    return np.stack([kx, ky], axis=-1), conf
+    return np.stack([kx, ky], axis=-1)
 
 
 def affine_kpts(kpts_256, M_inv):

@@ -30,6 +30,11 @@ using hand_deploy::kNumKpts;
 // 用 "rknn-npu" 区分于主机模拟器的 "rknn-sim"，便于 diff 时一眼识别来源。
 constexpr const char* kBackendLabel = "rknn-npu";
 
+// 板端约定布局：单一 --eval 目录下固定子路径，与主机 datasets/eval/ 同名，
+// 让"打包整目录拷到板端"成为唯一部署动作，无需额外重命名。
+constexpr const char* kEvalAnnName    = "val.json";
+constexpr const char* kEvalImagesName = "val_images";
+
 std::string basename(const std::string& p) {
     const auto pos = p.find_last_of('/');
     return pos == std::string::npos ? p : p.substr(pos + 1);
@@ -59,16 +64,16 @@ double percentile(std::vector<double> v, double q) {
 
 void print_help(const char* argv0) {
     std::fprintf(stderr,
-        "Usage: %s --det DET.rknn --pose POSE.rknn --ann val.json --img-dir DIR\n"
-        "           [--score-thr 0.4] [--nms 0.6] [--warmup 3] [--n 0]\n",
-        argv0);
+        "Usage: %s --det DET.rknn --pose POSE.rknn --eval EVAL_DIR\n"
+        "           [--score-thr 0.4] [--nms 0.6] [--warmup 3] [--n 0]\n"
+        "  EVAL_DIR must contain '%s' and '%s/'.\n",
+        argv0, kEvalAnnName, kEvalImagesName);
 }
 
 struct Args {
     std::string det_path;
     std::string pose_path;
-    std::string ann_path;
-    std::string img_dir;
+    std::string eval_dir;
     float score_thr = 0.4f;
     float nms_thr = 0.6f;
     int warmup = 3;
@@ -87,8 +92,7 @@ bool parse_args(int argc, char** argv, Args& out) {
         };
         if (a == "--det") out.det_path = need("--det");
         else if (a == "--pose") out.pose_path = need("--pose");
-        else if (a == "--ann") out.ann_path = need("--ann");
-        else if (a == "--img-dir") out.img_dir = need("--img-dir");
+        else if (a == "--eval") out.eval_dir = need("--eval");
         else if (a == "--score-thr") out.score_thr = std::atof(need("--score-thr"));
         else if (a == "--nms") out.nms_thr = std::atof(need("--nms"));
         else if (a == "--warmup") out.warmup = std::atoi(need("--warmup"));
@@ -96,8 +100,7 @@ bool parse_args(int argc, char** argv, Args& out) {
         else if (a == "-h" || a == "--help") { print_help(argv[0]); std::exit(0); }
         else { std::fprintf(stderr, "FAIL: unknown arg: %s\n", a.c_str()); return false; }
     }
-    if (out.det_path.empty() || out.pose_path.empty() ||
-        out.ann_path.empty() || out.img_dir.empty()) {
+    if (out.det_path.empty() || out.pose_path.empty() || out.eval_dir.empty()) {
         print_help(argv[0]);
         return false;
     }
@@ -123,10 +126,13 @@ int main(int argc, char** argv) {
     hand_deploy::RtmDet det(args.det_path, dcfg);
     hand_deploy::RtmPose pose(args.pose_path, pcfg);
 
-    auto records = hand_deploy::LoadCocoEval(args.ann_path, args.img_dir);
+    const std::string ann_path = args.eval_dir + "/" + kEvalAnnName;
+    const std::string img_dir  = args.eval_dir + "/" + kEvalImagesName;
+
+    auto records = hand_deploy::LoadCocoEval(ann_path, img_dir);
     if (records.empty()) {
         std::fprintf(stderr, "FAIL: no images under %s match %s\n",
-                     args.img_dir.c_str(), args.ann_path.c_str());
+                     img_dir.c_str(), ann_path.c_str());
         return 2;
     }
     if (args.cap_n > 0 && args.cap_n < static_cast<int>(records.size())) {
@@ -142,7 +148,7 @@ int main(int argc, char** argv) {
     std::vector<LoadedImage> imgs;
     imgs.reserve(records.size());
     for (const auto& r : records) {
-        cv::Mat img = cv::imread(args.img_dir + "/" + r.file_name, cv::IMREAD_COLOR);
+        cv::Mat img = cv::imread(img_dir + "/" + r.file_name, cv::IMREAD_COLOR);
         if (img.empty()) {
             std::fprintf(stderr, "WARN: imread failed: %s\n", r.file_name.c_str());
             continue;

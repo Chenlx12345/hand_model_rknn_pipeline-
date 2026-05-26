@@ -97,26 +97,27 @@ for (const auto& d : dets) {
 
 ## 板端跑 unit_bench_e2e_test
 
-把以下文件拷到板端同一目录（示例 `/userdata/hand_eval/`）：
+把以下文件拷到板端同一目录（示例 `/usr/das_ego/ant/`，也可以是 `/userdata/hand_eval/`）。
+`eval/` 子目录直接从主机 `datasets/eval/` 整体拷过来，**保持原文件名**：
 
 ```text
-/userdata/hand_eval/
+/usr/das_ego/ant/
 ├── unit_bench_e2e_test         (infer/build/)
 ├── rtmdet_s_hand_640.rknn      (../out/)
 ├── rtmpose_hand_256.rknn       (../out/)
-├── val.json                    (../datasets/eval/)
-└── val_images/                 (../datasets/eval/)
+└── eval/                       (= datasets/eval/)
+    ├── val.json
+    └── val_images/
 ```
 
 板端执行：
 
 ```sh
-cd /userdata/hand_eval
+cd /usr/das_ego/ant
 ./unit_bench_e2e_test \
     --det  rtmdet_s_hand_640.rknn \
     --pose rtmpose_hand_256.rknn  \
-    --ann  val.json \
-    --img-dir val_images
+    --eval eval
 ```
 
 可选参数：`--score-thr 0.4`、`--nms 0.6`、`--warmup 3`、`--n N`（限制图片张数）。

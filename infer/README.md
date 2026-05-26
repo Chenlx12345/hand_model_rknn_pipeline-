@@ -1,7 +1,7 @@
 # infer/ — 板端 RKNN 推理库 + 板上自验证
 
 `libhand_pipeline.a` 提供 RTMDet + RTMPose 在 RK3588 NPU 上的推理 API；
-同目录 `tests/` 提供 `bench_e2e_rknn`：用 COCO `val.json` 在板上跑端到端精度 / 延迟。
+同目录 `tests/` 提供 `unit_bench_e2e_test`：用 COCO `val.json` 在板上跑端到端精度 / 延迟。
 
 ## 目录结构
 
@@ -37,7 +37,7 @@ cd external/hand_model_rknn_pipeline/infer
 ./build.sh
 # 产物：
 #   build/libhand_pipeline.a   (aarch64 静态库)
-#   build/bench_e2e_rknn       (aarch64 ELF，板上跑)
+#   build/unit_bench_e2e_test  (aarch64 ELF，板上跑)
 ```
 
 只想构建库、不要测试（不拉 `nlohmann/json`）：
@@ -95,13 +95,13 @@ for (const auto& d : dets) {
 
 低层路径适合自己控制串行 / 并行、单独跑检测、或需要精细化分段计时的场景。
 
-## 板端跑 bench_e2e_rknn
+## 板端跑 unit_bench_e2e_test
 
 把以下文件拷到板端同一目录（示例 `/userdata/hand_eval/`）：
 
 ```text
 /userdata/hand_eval/
-├── bench_e2e_rknn              (infer/build/)
+├── unit_bench_e2e_test         (infer/build/)
 ├── rtmdet_s_hand_640.rknn      (../out/)
 ├── rtmpose_hand_256.rknn       (../out/)
 ├── val.json                    (../datasets/eval/)
@@ -112,7 +112,7 @@ for (const auto& d : dets) {
 
 ```sh
 cd /userdata/hand_eval
-./bench_e2e_rknn \
+./unit_bench_e2e_test \
     --det  rtmdet_s_hand_640.rknn \
     --pose rtmpose_hand_256.rknn  \
     --ann  val.json \

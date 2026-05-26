@@ -1,4 +1,4 @@
-// bench_e2e_rknn: board-side end-to-end validation of the on-disk .rknn
+// unit_bench_e2e_test: board-side end-to-end validation of the on-disk .rknn
 // pair against the Python pipeline. Single source of truth for the
 // pre/post-processing pipeline is scripts/pipeline_lib.py + bench_e2e.py.
 #include "eval.h"

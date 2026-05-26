@@ -1,6 +1,6 @@
 #!/bin/sh
 # 一键交叉编译：使用主仓库 cmake/toolchain-rk3588.cmake
-# 产物：build/bench_e2e_rknn  (aarch64 ELF)
+# 产物：build/unit_bench_e2e_test  (aarch64 ELF)
 set -e
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -21,5 +21,5 @@ cmake -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
 cmake --build . -j"$(nproc)"
 
 echo
-echo "PASS: $BUILD_DIR/bench_e2e_rknn"
-file "$BUILD_DIR/bench_e2e_rknn" || true
+echo "PASS: $BUILD_DIR/unit_bench_e2e_test"
+file "$BUILD_DIR/unit_bench_e2e_test" || true

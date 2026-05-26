@@ -14,16 +14,16 @@ if(NOT EXISTS "${NLOHMANN_INCLUDE_DIR}/nlohmann/json.hpp")
         "nlohmann/json.hpp not found at ${NLOHMANN_INCLUDE_DIR}")
 endif()
 
-add_executable(bench_e2e_rknn
+add_executable(unit_bench_e2e_test
     unit_bench_e2e_test.cpp
     eval.cpp
 )
-target_include_directories(bench_e2e_rknn PRIVATE
+target_include_directories(unit_bench_e2e_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}    # for "eval.h"
     ${NLOHMANN_INCLUDE_DIR}
 )
-target_link_libraries(bench_e2e_rknn PRIVATE hand_pipeline)
+target_link_libraries(unit_bench_e2e_test PRIVATE hand_pipeline)
 
-set_target_properties(bench_e2e_rknn PROPERTIES
+set_target_properties(unit_bench_e2e_test PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
 )

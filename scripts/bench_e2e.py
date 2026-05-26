@@ -151,7 +151,126 @@ class RknnBackend:
         self.det.release(); self.pose.release()
 
 
-BACKENDS = ("onnx", "rknn")
+BACKENDS = ("onnx", "rknn", "both")
+
+
+# ─── per-image inference helper ───────────────────────────────────────────
+
+def run_one(backend, rec, score_thr: float, nms_thr: float):
+    """Run det + pose for every detection on a single pre-letterboxed record.
+
+    Returns:
+        boxes_full      : (N,4) xyxy in original image coords
+        kpts_full       : dict[pi] -> (21,2) keypoints in original image coords
+        det_ms          : float, detector latency
+        pose_ms_list    : list[float], one entry per detected hand
+    """
+    cls_o, reg_o, det_ms = backend.infer_det(rec["lb"])
+    boxes_lb, _ = decode_rtmdet(
+        cls_o, reg_o, score_thr=score_thr, nms_thr=nms_thr)
+    boxes_full = unletterbox_bboxes(
+        boxes_lb, rec["scale"], rec["x0"], rec["y0"])
+    kpts_full: dict[int, np.ndarray] = {}
+    pose_ms_list: list[float] = []
+    for pi, box in enumerate(boxes_full):
+        crop, M_inv = topdown_crop_rgb(rec["img"], box)
+        sx, sy, pose_ms = backend.infer_pose(crop)
+        pose_ms_list.append(pose_ms)
+        kpts_256, _ = decode_simcc(sx, sy)
+        kpts_full[pi] = affine_kpts(kpts_256, M_inv)
+    return boxes_full, kpts_full, det_ms, pose_ms_list
+
+
+# ─── `both` comparison reporter ───────────────────────────────────────────
+
+def _new_stats():
+    # Per-backend accumulators; mirrors the single-backend timed pass
+    # at the bottom of main() so columns are computed identically.
+    return {"det": [], "pose": [], "e2e": [], "pck": [],
+            "n_pred": 0, "n_match": 0}
+
+
+def _aggregate(backend, rec, gt_xyxy, gt_kpts_list, s,
+               score_thr, nms_thr):
+    """Run one backend over one image; fold latencies + matches + kpt
+    errors into stats dict `s`. Returns nothing — pure accumulator."""
+    t0 = time.perf_counter()
+    boxes, kpts, det_ms, pose_ms_list = run_one(
+        backend, rec, score_thr, nms_thr)
+    e2e_ms = (time.perf_counter() - t0) * 1000.0
+
+    s["det"].append(det_ms)
+    s["pose"].extend(pose_ms_list)
+    s["e2e"].append(e2e_ms)
+    s["n_pred"] += len(boxes)
+
+    for pi, gi in match_preds_to_gt(boxes, gt_xyxy, 0.5):
+        s["n_match"] += 1
+        gk = gt_kpts_list[gi]
+        kf = kpts[pi]
+        for k in range(min(21, len(gk))):
+            if gk[k, 2] > 0:  # visible
+                s["pck"].append(float(np.linalg.norm(kf[k] - gk[k, :2])))
+
+
+def _print_summary(stats, n_gt_total, n_images):
+    print()
+    print(f"=== bench_e2e: ONNX vs RKNN ({n_images} images) ===")
+    print(f"| {'backend':<7} | {'recall':>6} | {'PCK@5':>6} | {'PCK@10':>6} | "
+          f"{'mean_err':>8} | {'det_ms':>7} | {'pose_ms':>7} | "
+          f"{'e2e_ms':>6} | {'FPS':>5} |")
+    print(f"|{'-'*9}|{'-'*8}|{'-'*8}|{'-'*8}|{'-'*10}|"
+          f"{'-'*9}|{'-'*9}|{'-'*8}|{'-'*7}|")
+    for label, s in stats.items():
+        E = np.array(s["e2e"])
+        D = np.array(s["det"])
+        P = np.array(s["pose"]) if s["pose"] else np.zeros(1)
+        PCK = np.array(s["pck"]) if s["pck"] else np.zeros(0)
+        recall = s["n_match"] / max(n_gt_total, 1) * 100.0
+        pck5 = (PCK <= 5).mean() * 100.0 if PCK.size else float("nan")
+        pck10 = (PCK <= 10).mean() * 100.0 if PCK.size else float("nan")
+        mean_err = PCK.mean() if PCK.size else float("nan")
+        fps = 1000.0 / E.mean() if E.size else float("nan")
+        print(
+            f"| {label:<7} | {recall:5.1f}% | {pck5:5.1f}% | {pck10:5.1f}% | "
+            f"{mean_err:5.2f} px | {D.mean():7.2f} | {P.mean():7.2f} | "
+            f"{E.mean():6.2f} | {fps:5.2f} |"
+        )
+
+
+def _run_compare(b_onnx, b_rknn, records, *,
+                 score_thr: float, nms_thr: float, warmup: int):
+    # warmup both — first record only, mirrors single-backend path
+    r0 = records[0]
+    for _ in range(warmup):
+        for bk in (b_onnx, b_rknn):
+            cls_o, reg_o, _ = bk.infer_det(r0["lb"])
+            bx, _ = decode_rtmdet(cls_o, reg_o,
+                                  score_thr=score_thr, nms_thr=nms_thr)
+            bx = unletterbox_bboxes(bx, r0["scale"], r0["x0"], r0["y0"])
+            for b in bx[:1]:
+                crop, _ = topdown_crop_rgb(r0["img"], b)
+                bk.infer_pose(crop)
+
+    stats = {"onnx": _new_stats(), "rknn": _new_stats()}
+    n_gt_total = 0
+    for rec in records:
+        gt_xyxy_list, gt_kpts_list = [], []
+        for ann in rec["gts"]:
+            x, y, w, h = ann["bbox"]
+            gt_xyxy_list.append([x, y, x + w, y + h])
+            gt_kpts_list.append(
+                np.array(ann["keypoints"], dtype=np.float32).reshape(-1, 3))
+        gt_xyxy = np.array(gt_xyxy_list, dtype=np.float32)
+        n_gt_total += len(gt_kpts_list)
+
+        _aggregate(b_onnx, rec, gt_xyxy, gt_kpts_list, stats["onnx"],
+                   score_thr, nms_thr)
+        _aggregate(b_rknn, rec, gt_xyxy, gt_kpts_list, stats["rknn"],
+                   score_thr, nms_thr)
+
+    b_onnx.release(); b_rknn.release()
+    _print_summary(stats, n_gt_total, len(records))
 
 
 # ─── main ─────────────────────────────────────────────────────────────────
@@ -190,18 +309,18 @@ def main():
             sys.exit(f"FAIL: missing: {p}")
 
     print(f"[load] backend={args.backend}  det={args.det.name}  pose={args.pose.name}")
-    if args.backend == "onnx":
-        backend = OnnxBackend(args.det, args.pose)
-    else:  # rknn — rebuild INT8 in-memory from ONNX (toolkit 2.3.2 simulator path)
+
+    def _make_rknn():
+        # RKNN backend constructor — also used by `both`. Validates calib args
+        # and pins toolkit's cwd-relative dump artefacts under out/ regardless
+        # of where the user invoked the script from.
         if args.calib_dir is None:
-            sys.exit("FAIL: --backend rknn requires --calib-dir")
+            sys.exit("FAIL: --backend rknn/both requires --calib-dir")
         if not args.calib_dir.exists():
             sys.exit(f"FAIL: missing: {args.calib_dir}")
-        # Trap toolkit cwd-relative dumps (check*_*.onnx, _calib_*.txt)
-        # under out/ regardless of the cwd the user invoked us from.
         scratch = (HERE.parent / "out").resolve()
         scratch.mkdir(parents=True, exist_ok=True)
-        backend = RknnBackend(
+        return RknnBackend(
             det_onnx=args.det, pose_onnx=args.pose,
             det_preset=PRESETS[args.det_model],
             pose_preset=PRESETS[args.pose_model],
@@ -209,6 +328,15 @@ def main():
             target=args.target,
             scratch_dir=scratch,
         )
+
+    if args.backend == "onnx":
+        backend = OnnxBackend(args.det, args.pose)
+    elif args.backend == "rknn":
+        backend = _make_rknn()
+    else:  # both — build ONNX then RKNN so log order matches diff direction
+        backend_onnx = OnnxBackend(args.det, args.pose)
+        backend_rknn = _make_rknn()
+        backend = None
 
     coco = json.load(open(args.ann))
     img_meta = {im["id"]: im for im in coco["images"]}
@@ -237,6 +365,15 @@ def main():
             "scale": scale, "x0": x0, "y0": y0,
             "gts": gt_by_image[f],
         })
+
+    # ── `both` mode: per-image ONNX vs RKNN comparison table, no aggregate ──
+    if args.backend == "both":
+        _run_compare(
+            backend_onnx, backend_rknn, records,
+            score_thr=args.det_score_thr, nms_thr=args.det_nms_thr,
+            warmup=args.warmup,
+        )
+        return
 
     # ── warmup on the first record ──
     r0 = records[0]

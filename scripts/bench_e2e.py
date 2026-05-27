@@ -280,7 +280,7 @@ def main():
                     help="image cap (0 = all images with GT)")
     ap.add_argument("--warmup",  type=int, default=3)
     ap.add_argument("--det-input", type=int, default=640,
-                    help="letterbox target (rtmdet_s_hand_640 -> 640)")
+                    help="letterbox target (rtmdet_tiny_hand_640 -> 640)")
     ap.add_argument("--det-score-thr", type=float, default=0.4)
     ap.add_argument("--det-nms-thr",   type=float, default=0.6)
     # rknn-only

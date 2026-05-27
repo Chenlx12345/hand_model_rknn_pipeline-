@@ -4,8 +4,8 @@ Presets:
   rtmpose   mean=123.675,116.28,103.53   std=58.395,57.12,57.375   RGB
   rtmdet    mean=103.53,116.28,123.675   std=57.375,57.12,58.395   BGR
 
-  python scripts/onnx2rknn.py --model rtmdet --onnx onnx/rtmdet_s_hand_640.onnx \\
-      --out out/rtmdet_s_hand_640.rknn --quantize --calib-dir datasets/calib/images
+  python scripts/onnx2rknn.py --model rtmdet --onnx onnx/rtmdet_tiny_hand_640.onnx \\
+      --out out/rtmdet_tiny_hand_640.rknn --quantize --calib-dir datasets/calib/images
 """
 from __future__ import annotations
 import argparse

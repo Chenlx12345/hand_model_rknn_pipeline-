@@ -97,7 +97,7 @@ target_link_libraries(<your_app> PRIVATE hand_pipeline)
 ```cpp
 #include "hand_pipeline.h"
 
-hand_deploy::HandPipeline hp("rtmdet_s_hand_640.rknn",
+hand_deploy::HandPipeline hp("rtmdet_tiny_hand_640.rknn",
                              "rtmpose_hand_256.rknn");
 
 hand_deploy::HandTiming t;
@@ -117,7 +117,7 @@ for (const auto& h : hands) {
 #include "rtmdet.h"
 #include "rtmpose.h"
 
-hand_deploy::RtmDet  det ("rtmdet_s_hand_640.rknn", {});
+hand_deploy::RtmDet  det ("rtmdet_tiny_hand_640.rknn", {});
 hand_deploy::RtmPose pose("rtmpose_hand_256.rknn",  {});
 
 double det_ms = 0.0;
@@ -140,7 +140,7 @@ bbox 与关键点都已经映射到原图坐标系，调用方无需再做坐标
 ```text
 /usr/das_ego/ant/
 ├── unit_bench_e2e_test         (infer/build/)
-├── rtmdet_s_hand_640.rknn      (../out/)
+├── rtmdet_tiny_hand_640.rknn      (../out/)
 ├── rtmpose_hand_256.rknn       (../out/)
 └── eval/                       (= datasets/eval/)
     ├── val.json
@@ -152,7 +152,7 @@ bbox 与关键点都已经映射到原图坐标系，调用方无需再做坐标
 ```sh
 cd /usr/das_ego/ant
 ./unit_bench_e2e_test \
-    --det  rtmdet_s_hand_640.rknn \
+    --det  rtmdet_tiny_hand_640.rknn \
     --pose rtmpose_hand_256.rknn  \
     --eval eval
 ```
@@ -171,7 +171,7 @@ NPU 数值差异。
 # 主机参考：一次跑出 ONNX 基线 + RKNN 模拟器对比，与板端 unit_bench_e2e_test
 # 的 rknn-npu 数字形成三段对照（ONNX / RKNN-SIM / RKNN-NPU）。
 python scripts/bench_e2e.py --backend both \
-    --det  onnx/rtmdet_s_hand_640.onnx --pose onnx/rtmpose_hand_256.onnx \
+    --det  onnx/rtmdet_tiny_hand_640.onnx --pose onnx/rtmpose_hand_256.onnx \
     --det-model rtmdet --pose-model rtmpose \
     --calib-dir datasets/calib/images \
     --ann datasets/eval/val.json --img-dir datasets/eval/val_images

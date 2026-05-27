@@ -8,7 +8,7 @@
 
 | 阶段 | ONNX                       | 输入     | preset  | 通道顺序 |
 | ---- | -------------------------- | -------- | ------- | -------- |
-| det  | rtmdet_s_hand_640.onnx     | 640x640  | rtmdet  | BGR      |
+| det  | rtmdet_tiny_hand_640.onnx     | 640x640  | rtmdet  | BGR      |
 | pose | rtmpose_hand_256.onnx      | 256x256  | rtmpose | RGB      |
 
 ## 仓库结构
@@ -67,8 +67,8 @@ python -c "import onnx; print(onnx.__version__)"                          # 期�
 ```sh
 # 转换
 python scripts/onnx2rknn.py --model rtmdet  \
-    --onnx onnx/rtmdet_s_hand_640.onnx \
-    --out  out/rtmdet_s_hand_640.rknn  \
+    --onnx onnx/rtmdet_tiny_hand_640.onnx \
+    --out  out/rtmdet_tiny_hand_640.rknn  \
     --quantize --calib-dir datasets/calib/images
 
 python scripts/onnx2rknn.py --model rtmpose \
@@ -79,7 +79,7 @@ python scripts/onnx2rknn.py --model rtmpose \
 # 端到端 PC 评测：ONNX 基线 + RKNN 模拟器一次跑完，并列输出 recall / PCK / 延迟，
 # 同时在 out/viz/ 下生成 ONNX | RKNN 左右拼接图，直接看 INT8 量化漂移。
 python scripts/bench_e2e.py --backend both \
-    --det  onnx/rtmdet_s_hand_640.onnx \
+    --det  onnx/rtmdet_tiny_hand_640.onnx \
     --pose onnx/rtmpose_hand_256.onnx  \
     --det-model rtmdet --pose-model rtmpose \
     --calib-dir datasets/calib/images \
@@ -91,6 +91,6 @@ ONNX vs RKNN：recall / PCK@5 差 ≤ 5pp 为预期（`--backend both` 表格列
 ## 部署到开发板
 
 ```sh
-cp out/rtmdet_s_hand_640.rknn <deploy_dir>/
+cp out/rtmdet_tiny_hand_640.rknn <deploy_dir>/
 cp out/rtmpose_hand_256.rknn  <deploy_dir>/
 ```

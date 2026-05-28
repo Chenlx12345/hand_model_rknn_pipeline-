@@ -1,0 +1,33 @@
+{
+  "_comment": "led_box_pose_sdk algorithm parameters, loaded from assets/config.json at init. Any key omitted falls back to the built-in default (src/params.hpp). Edit and redeploy; no recompile needed.",
+
+  "led_threshold": 180,
+  "led_adaptive_frac": 0.70,
+  "led_min_area": 5.0,
+  "led_max_area": 600.0,
+
+  "ray_prefilter_m": 0.008,
+  "reproj_max_px": 3.0,
+  "min_dist_m": 0.02,
+  "max_dist_m": 3.0,
+  "min_seeds": 4,
+  "disp_k": 8,
+  "nei_radius_m": 0.13,
+  "disp_iters": 4,
+  "disp_tol_m": 0.13,
+  "disp_weight": 12.0,
+  "order_row_tol_px": 10.0,
+  "order_win_px": 70.0,
+  "order_iters": 6,
+  "hand_diam_m": 0.30,
+  "hand_depth_band_m": 0.45,
+  "max_hands": 2,
+
+  "step3_min_points": 3,
+  "crop_margin_frac": 0.6,
+  "crop_min_px": 220,
+  "det_score_thr": 0.3,
+  "det_nms_iou": 0.6,
+
+  "process_hz": 5.0
+}

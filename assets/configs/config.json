@@ -1,5 +1,5 @@
 {
-  "_comment": "led_box_pose_sdk algorithm parameters, loaded from assets/config.json at init. Any key omitted falls back to the built-in default (src/params.hpp). Edit and redeploy; no recompile needed.",
+  "_comment": "led_box_pose_sdk algorithm parameters, loaded from assets/configs/config.json at init. Any key omitted falls back to the built-in default (src/params.hpp). Edit and redeploy; no recompile needed.",
 
   "led_threshold": 180,
   "led_adaptive_frac": 0.70,

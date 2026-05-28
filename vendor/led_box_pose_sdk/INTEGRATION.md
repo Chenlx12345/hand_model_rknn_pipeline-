@@ -12,11 +12,12 @@ led_box_pose_sdk/
 ├── lib/libled_box_pose_sdk.a        静态库（推荐：全静态 buildroot 集成）
 ├── lib/libled_box_pose_sdk.so(.0)   动态库（可选：运行期有匹配的 OpenCV/OpenSSL .so 时）
 ├── assets/                          运行期资源
-│   ├── config.json                  算法参数（阈值、门限、process_hz）
+│   ├── configs/config.json          算法参数（阈值、门限、process_hz）
 │   ├── models/rtmdet.rknn           手部检测模型
 │   ├── models/rtmpose.rknn          手部姿态模型
 │   ├── models/MODELS_VERSION.txt    模型版本记录
-│   └── box_left.txt / box_right.txt LED box 模型
+│   └── box/box_left.txt             LED box 模型
+│       box/box_right.txt
 ├── examples/integrate_example.cpp   接入示例（算法侧完整接线）
 ├── examples/algo_input_api.hpp      algo-input 接口快照（参考；实物以 das_ego_app 为准）
 └── INTEGRATION.md
@@ -108,7 +109,7 @@ sdk.finalize();
 
 约定：
 
-- `process_batch` 按 `assets/config.json` 的 `process_hz` 在库内部跳帧处理，回调按
+- `process_batch` 按 `assets/configs/config.json` 的 `process_hz` 在库内部跳帧处理，回调按
   相机原始帧率调用即可，无需外部降频。
 - `ImageView` 指向的像素仅在调用期内被读取，`process_batch` 返回后即可释放。
 - 回调在服务的采集线程触发，库内同步处理。
@@ -159,6 +160,6 @@ g++ -std=c++17 app.cpp \
 
 ## 参数调整
 
-修改 `assets/config.json`（无需重新编译）。常用项：`led_threshold`、`led_min_area`、
+修改 `assets/configs/config.json`（无需重新编译）。常用项：`led_threshold`、`led_min_area`、
 `led_max_area`（LED 光斑亮度阈值与面积范围）、`det_score_thr`（检测置信度阈值）、
 `process_hz`（库内部处理频率）。JSON 中省略的键采用库内置缺省值。

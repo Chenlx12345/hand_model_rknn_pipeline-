@@ -6,6 +6,9 @@ infer/build/
 # rknn-toolkit2 build-pass intermediate dumps (hardcoded to cwd by toolkit)
 check*_*.onnx
 
+# source ONNX models placed here before conversion (not tracked)
+onnx/*.onnx
+
 # python virtualenv
 .venv_rknn/
 __pycache__/

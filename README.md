@@ -6,10 +6,10 @@
 作为主仓库子模块使用时，默认路径为
 `external/hand_model_rknn_pipeline`。
 
-| 阶段 | ONNX                       | 输入     | preset  | 通道顺序 |
-| ---- | -------------------------- | -------- | ------- | -------- |
-| det  | rtmdet_tiny_hand_640.onnx     | 640x640  | rtmdet  | BGR      |
-| pose | rtmpose_hand_256.onnx      | 256x256  | rtmpose | RGB      |
+| 阶段 | ONNX          | 输入     | preset  | 通道顺序 |
+| ---- | ------------- | -------- | ------- | -------- |
+| det  | rtmdet.onnx   | 640x640  | rtmdet  | BGR      |
+| pose | rtmpose.onnx  | 256x256  | rtmpose | RGB      |
 
 ## 仓库结构
 
@@ -21,7 +21,10 @@
 │   └── eval/
 │       ├── val.json          COCO 标注（184 张图 / 296 个手部实例）
 │       └── val_images/       34 张验证图（val.json 的子集）
-├── out/              转换产物（gitignored）
+├── assets/           部署资源（模型 / 配置 / box-mesh）
+│   └── models/       转换产物 .rknn 输出目录
+├── src/infer/        板端 RTMDet+RTMPose 推理库
+├── vendor/           二进制交付 SDK（led_box_pose_sdk）
 ├── scripts/          onnx2rknn / bench_e2e / pipeline_lib / viz_lib
 ├── third_party/      rknn-toolkit2 submodule
 └── convert_all.sh
@@ -67,20 +70,20 @@ python -c "import onnx; print(onnx.__version__)"                          # 期�
 ```sh
 # 转换
 python scripts/onnx2rknn.py --model rtmdet  \
-    --onnx onnx/rtmdet_tiny_hand_640.onnx \
-    --out  out/rtmdet_tiny_hand_640.rknn  \
+    --onnx onnx/rtmdet.onnx \
+    --out  assets/models/rtmdet.rknn  \
     --quantize --calib-dir datasets/calib/images
 
 python scripts/onnx2rknn.py --model rtmpose \
-    --onnx onnx/rtmpose_hand_256.onnx  \
-    --out  out/rtmpose_hand_256.rknn   \
+    --onnx onnx/rtmpose.onnx \
+    --out  assets/models/rtmpose.rknn \
     --quantize --calib-dir datasets/calib/images
 
 # 端到端 PC 评测：ONNX 基线 + RKNN 模拟器一次跑完，并列输出 recall / PCK / 延迟，
 # 同时在 out/viz/ 下生成 ONNX | RKNN 左右拼接图，直接看 INT8 量化漂移。
 python scripts/bench_e2e.py --backend both \
-    --det  onnx/rtmdet_tiny_hand_640.onnx \
-    --pose onnx/rtmpose_hand_256.onnx  \
+    --det  onnx/rtmdet.onnx \
+    --pose onnx/rtmpose.onnx \
     --det-model rtmdet --pose-model rtmpose \
     --calib-dir datasets/calib/images \
     --ann  datasets/eval/val.json --img-dir datasets/eval/val_images
@@ -91,6 +94,6 @@ ONNX vs RKNN：recall / PCK@5 差 ≤ 5pp 为预期（`--backend both` 表格列
 ## 部署到开发板
 
 ```sh
-cp out/rtmdet_tiny_hand_640.rknn <deploy_dir>/
-cp out/rtmpose_hand_256.rknn  <deploy_dir>/
+cp assets/models/rtmdet.rknn  <deploy_dir>/
+cp assets/models/rtmpose.rknn <deploy_dir>/
 ```

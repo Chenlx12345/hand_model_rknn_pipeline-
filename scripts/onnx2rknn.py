@@ -4,8 +4,8 @@ Presets:
   rtmpose   mean=123.675,116.28,103.53   std=58.395,57.12,57.375   RGB
   rtmdet    mean=103.53,116.28,123.675   std=57.375,57.12,58.395   BGR
 
-  python scripts/onnx2rknn.py --model rtmdet --onnx onnx/rtmdet_tiny_hand_640.onnx \\
-      --out out/rtmdet_tiny_hand_640.rknn --quantize --calib-dir datasets/calib/images
+  python scripts/onnx2rknn.py --model rtmdet --onnx onnx/rtmdet.onnx \\
+      --out assets/models/rtmdet.rknn --quantize --calib-dir datasets/calib/images
 """
 from __future__ import annotations
 import argparse
@@ -86,8 +86,15 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     calib_dir_abs = args.calib_dir.resolve() if args.calib_dir else None
 
+    # chdir into a fixed scratch dir so toolkit's hardcoded cwd dumps
+    # (check0_base_optimize.onnx / check3_fuse_ops.onnx / _calib_*.txt)
+    # never pollute the --out destination directory.
+    scratch_dir = Path(__file__).resolve().parent.parent / "out"
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    if args.quantize:
+        calib_txt = (scratch_dir / f"_calib_{out_abs.stem}.txt").resolve()
     orig_cwd = Path.cwd()
-    os.chdir(out_dir)
+    os.chdir(scratch_dir)
     try:
         rknn = RKNN(verbose=True)
         print(f"[1/4] config (target={args.target})")
@@ -106,7 +113,6 @@ def main():
         if args.quantize:
             if not calib_dir_abs:
                 sys.exit("--quantize requires --calib-dir")
-            calib_txt = (out_dir / f"_calib_{out_abs.stem}.txt").resolve()
             n = build_calib_list(calib_dir_abs, calib_txt)
             print(f"[3/4] build INT8  (calib n={n}, full tree)")
             ret = rknn.build(do_quantization=True, dataset=str(calib_txt))

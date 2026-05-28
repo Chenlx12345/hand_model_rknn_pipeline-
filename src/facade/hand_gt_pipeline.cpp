@@ -12,20 +12,6 @@
 
 #include "led_box_pose_sdk.hpp"
 
-// vendor SDK .a 由 GCC11.4 编出，本工程 toolchain GCC10.4 的 libstdc++.a 不含
-// __throw_bad_array_new_length。补一份等价定义让 ld 解析；GCC>=11 时跳过避免冲突。
-// 必须放在本 TU 内：HandGtPipeline 构造被 service 引用 → ld 必拉本 .o → 该符号
-// 一并入全局表，后续扫 vendor SDK 时即可解析。拆到独立 .cpp 会因单遍 ld
-// pull-in 失败导致 undefined reference。
-#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ < 11
-#include <new>
-namespace std {
-[[noreturn]] void __throw_bad_array_new_length() {
-    throw std::bad_array_new_length();
-}
-}  // namespace std
-#endif
-
 namespace hand_pipeline {
 
 namespace {

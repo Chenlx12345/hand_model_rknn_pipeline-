@@ -23,12 +23,20 @@ if(NOT EXISTS "${_LBP_INC}/led_box_pose_sdk.hpp")
         "led_box_pose_sdk 公开头缺失：${_LBP_INC}/led_box_pose_sdk.hpp")
 endif()
 
+set(_LBP_OPENCV_ROOT
+    "${DAS_EGO_SDK_PATH}/buildroot/output/rockchip_genrobot_rk3588/build/rknpu2-1.0.0/examples/3rdparty/opencv/opencv-linux-aarch64")
+set(_LBP_OPENCV_LIBS
+    "${_LBP_OPENCV_ROOT}/lib/libopencv_imgproc.a"
+    "${_LBP_OPENCV_ROOT}/lib/libopencv_core.a"
+    "${_LBP_OPENCV_ROOT}/share/OpenCV/3rdparty/lib/libtegra_hal.a"
+    "${_LBP_OPENCV_ROOT}/share/OpenCV/3rdparty/lib/libzlib.a")
+
 if(NOT TARGET hand_pipeline_vendor_sdk)
     add_library(hand_pipeline_vendor_sdk STATIC IMPORTED GLOBAL)
     set_target_properties(hand_pipeline_vendor_sdk PROPERTIES
         IMPORTED_LOCATION             "${_LBP_LIB}"
         INTERFACE_INCLUDE_DIRECTORIES "${_LBP_INC}"
-        INTERFACE_LINK_LIBRARIES      "rknnrt"
+        INTERFACE_LINK_LIBRARIES      "rknnrt;${_LBP_OPENCV_LIBS}"
     )
     add_library(hand_pipeline::vendor_sdk ALIAS hand_pipeline_vendor_sdk)
 endif()

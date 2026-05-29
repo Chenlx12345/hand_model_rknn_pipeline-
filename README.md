@@ -21,10 +21,9 @@
 │   └── eval/
 │       ├── val.json          COCO 标注（184 张图 / 296 个手部实例）
 │       └── val_images/       34 张验证图（val.json 的子集）
-├── assets/           部署资源（模型 / 配置 / box-mesh）
-│   └── models/       转换产物 .rknn 输出目录
+├── out/              转换产物 .rknn 输出目录（不入库）
 ├── src/infer/        板端 RTMDet+RTMPose 推理库
-├── vendor/           二进制交付 SDK（led_box_pose_sdk）
+├── vendor/           二进制交付 SDK（vitgloves_vis_sdk_pkg，自带 assets/{config,led,model}）
 ├── scripts/          onnx2rknn / bench_e2e / pipeline_lib / viz_lib
 ├── third_party/      rknn-toolkit2 submodule
 └── convert_all.sh
@@ -71,12 +70,12 @@ python -c "import onnx; print(onnx.__version__)"                          # 期�
 # 转换
 python scripts/onnx2rknn.py --model rtmdet  \
     --onnx onnx/rtmdet.onnx \
-    --out  assets/models/rtmdet.rknn  \
+    --out  out/rtmdet.rknn  \
     --quantize --calib-dir datasets/calib/images
 
 python scripts/onnx2rknn.py --model rtmpose \
     --onnx onnx/rtmpose.onnx \
-    --out  assets/models/rtmpose.rknn \
+    --out  out/rtmpose.rknn \
     --quantize --calib-dir datasets/calib/images
 
 # 端到端 PC 评测：ONNX 基线 + RKNN 模拟器一次跑完，并列输出 recall / PCK / 延迟，
@@ -93,7 +92,9 @@ ONNX vs RKNN：recall / PCK@5 差 ≤ 5pp 为预期（`--backend both` 表格列
 
 ## 部署到开发板
 
+新转出的 RKNN 模型回填到 SDK 资源池，与 SDK 自带 assets 一并部署：
+
 ```sh
-cp assets/models/rtmdet.rknn  <deploy_dir>/
-cp assets/models/rtmpose.rknn <deploy_dir>/
+cp out/rtmdet.rknn  vendor/vitgloves_vis_sdk_pkg/assets/model/
+cp out/rtmpose.rknn vendor/vitgloves_vis_sdk_pkg/assets/model/
 ```

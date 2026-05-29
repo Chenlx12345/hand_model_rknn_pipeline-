@@ -5,7 +5,7 @@ Presets:
   rtmdet    mean=103.53,116.28,123.675   std=57.375,57.12,58.395   BGR
 
   python scripts/onnx2rknn.py --model rtmdet --onnx onnx/rtmdet.onnx \\
-      --out assets/models/rtmdet.rknn --quantize --calib-dir datasets/calib/images
+      --out out/rtmdet.rknn --quantize --calib-dir datasets/calib/images
 """
 from __future__ import annotations
 import argparse

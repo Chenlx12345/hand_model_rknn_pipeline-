@@ -126,8 +126,8 @@ bbox 与关键点都已经映射到原图坐标系，调用方无需再做坐标
 ```text
 /usr/das_ego/ant/
 ├── unit_bench_e2e_test         (src/infer/build/)
-├── rtmdet.rknn                 (assets/models/)
-├── rtmpose.rknn                (assets/models/)
+├── rtmdet.rknn                 (out/ 或 vendor/.../assets/model/)
+├── rtmpose.rknn                (out/ 或 vendor/.../assets/model/)
 └── eval/                       (= datasets/eval/)
     ├── val.json
     └── val_images/

@@ -4,7 +4,7 @@
 // =============================================================================
 // AlgoInput API — 算法数据输入接口
 //
-// 提供三类数据：6 路同步相机图像、IMU 样本、相机标定参数。
+// 提供四类数据：6 路同步相机图像、头部 IMU、手部 IMU、相机标定参数。
 //
 // 快速接入：
 //
@@ -23,15 +23,22 @@
 //       // batch.batch_timestamp_ns — 纳秒级时间戳，与 IMU 对齐
 //   });
 //
-//   // 4. 注册 IMU 回调（200Hz）
-//   services::algo::setAlgoImuCallback([](const services::algo::AlgoImuSample& s) {
+//   // 4. 注册头部 IMU 回调（200Hz）
+//   services::algo::setAlgoHeadImuCallback([](const services::algo::AlgoHeadImuSample& s) {
 //       // s.accel_x/y/z, s.gyro_x/y/z, s.roll, s.pitch, s.yaw
 //       // s.timestamp_ns — 纳秒级时间戳，与相机 batch_timestamp_ns 对齐
 //   });
 //
-//   // 5. 关闭
+//   // 5. 注册手部 IMU 回调（5Hz，左右手各 14 节点）
+//   services::algo::setAlgoHandImuCallback([](const services::algo::AlgoHandImuFrame& f) {
+//       // f.handedness: 0=左手, 1=右手
+//       // f.nodes[i].quat[0..3]: 校准后四元数
+//   });
+//
+//   // 6. 关闭
 //   services::algo::clearAlgoBatchCallback();
-//   services::algo::clearAlgoImuCallback();
+//   services::algo::clearAlgoHeadImuCallback();
+//   services::algo::clearAlgoHandImuCallback();
 //   services::algo::shutdownAlgoInput();
 //
 // 约束：
@@ -85,7 +92,7 @@ struct AlgoBatch {
     std::array<AlgoFrame, kAlgoCameraCount> cams;  // 6 路始终齐全
 };
 
-struct AlgoImuSample {
+struct AlgoHeadImuSample {
     float    accel_x;
     float    accel_y;
     float    accel_z;
@@ -100,8 +107,34 @@ struct AlgoImuSample {
     uint32_t sequence;
 };
 
-using OnAlgoBatchCallback = std::function<void(const AlgoBatch&)>;
-using OnAlgoImuCallback   = std::function<void(const AlgoImuSample&)>;
+using OnAlgoBatchCallback    = std::function<void(const AlgoBatch&)>;
+using OnAlgoHeadImuCallback  = std::function<void(const AlgoHeadImuSample&)>;
+
+// ---- 手部 IMU (5Hz, PeerLink 手套, 左右手各 14 节点) ----
+
+constexpr uint8_t kAlgoHandImuNodeCount = 14;
+
+struct AlgoHandImuNode {
+    uint8_t  node_id;
+    uint16_t status;
+    float    accel[3];      // g
+    float    gyro[3];       // deg/s
+    float    mag[3];        // uT
+    float    quat[4];       // w,x,y,z (calibrated)
+    float    quat_raw[4];   // w,x,y,z (raw)
+};
+
+struct AlgoHandImuFrame {
+    uint8_t  handedness;    // 0=left, 1=right
+    uint32_t seq;
+    int64_t  timestamp_ns;  // CLOCK_REALTIME (ns)
+    std::array<AlgoHandImuNode, kAlgoHandImuNodeCount> nodes;
+    uint8_t  active_count;
+};
+
+using OnAlgoHandImuCallback = std::function<void(const AlgoHandImuFrame&)>;
+
+// ---- 初始化 / 关闭 / Batch / 标定 / IMU ----
 
 bool initializeAlgoInput();
 bool initializeAlgoInput(const AlgoInputConfig& config);
@@ -114,9 +147,14 @@ void clearAlgoBatchCallback();
 const CameraCalibration& getAlgoCameraCalibration(uint8_t cam_id);
 bool hasAlgoCameraCalibration(uint8_t cam_id);
 
-bool setAlgoImuCallback(OnAlgoImuCallback callback);
-void clearAlgoImuCallback();
-bool isAlgoImuEnabled();
+bool setAlgoHeadImuCallback(OnAlgoHeadImuCallback callback);
+void clearAlgoHeadImuCallback();
+bool isAlgoHeadImuEnabled();
+
+bool setAlgoHandImuCallback(OnAlgoHandImuCallback callback);
+void clearAlgoHandImuCallback();
+bool isAlgoHandImuEnabled();
+void pushAlgoHandImuFrame(const AlgoHandImuFrame& frame);
 
 }  // namespace algo
 }  // namespace services

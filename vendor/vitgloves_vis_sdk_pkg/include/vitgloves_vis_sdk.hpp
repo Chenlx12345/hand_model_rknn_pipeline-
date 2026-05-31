@@ -13,6 +13,8 @@
 // 公共头不依赖任何第三方类型(只 <cstdint>/<string>),PImpl + 隐藏符号。
 #pragma once
 
+#include "vitgloves_vis_result.hpp"   // 下游 SDK pull 用的 VvResult + POD 类型
+
 #include <cstdint>
 #include <string>
 
@@ -42,7 +44,7 @@ constexpr int VV_ERR_INTERNAL    = -4;
 /// 资源目录(模型/配置/LED 模型)固化在 SDK 内部,不再作参数;
 /// 默认是编译期 VV_ASSETS_DIR_DEFAULT,运行期可用 env VV_ASSETS_DIR 覆盖。
 struct InitConfig {
-    std::string output_path;  ///< 结果文件落盘路径(必填)
+    std::string output_path;  ///< NDJSON 落盘路径;**留空 = 不写文件**,下游用 get_latest 拉
 };
 
 /* ── SDK class(PImpl,不可拷贝) ─────────────────────────────── */
@@ -68,6 +70,13 @@ public:
     /// 运行期统计(回调里更新)。
     int frames_received() const;
     int imu_received() const;
+
+    /// 拉最新一个 5Hz tick 的结果(给下游 SDK 用;线程安全,非阻塞)。
+    /// 语义:**drop-stale**(只给最新一份;来不及取的中间帧覆盖丢弃)。
+    /// @param out 调用方提供的输出对象;成功时被 SDK 写入。
+    /// @return true  — 自上次 get 以来,SDK 又产出了新的 tick,*out 填好;
+    ///         false — 还没有新结果(*out 不动);可以稍后再问。
+    bool get_latest(VvResult* out);
 
 private:
     struct Impl;

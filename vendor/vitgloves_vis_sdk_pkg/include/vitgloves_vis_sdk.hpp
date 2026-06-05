@@ -70,6 +70,7 @@ public:
     /// 运行期统计(回调里更新)。
     int frames_received() const;
     int imu_received() const;
+    int hand_imu_received() const;
 
     /// 拉最新一个 5Hz tick 的结果(给下游 SDK 用;线程安全,非阻塞)。
     /// 语义:**drop-stale**(只给最新一份;来不及取的中间帧覆盖丢弃)。
@@ -81,6 +82,7 @@ public:
 private:
     struct Impl;
     Impl* pimpl_;
+    friend void step234_worker_func(Impl*);
 };
 
 } // namespace vis

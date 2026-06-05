@@ -3,7 +3,7 @@
 SDK 每一个 **5Hz tick** 写一行 JSON 到 `InitConfig::output_path`。
 文件整体是 **NDJSON / JSON Lines**(每行一个独立 JSON 对象,可直接 `for line in f: json.loads(line)` 流式读)。
 
-参考解析示例见 `visual_calib/visualize.py`。
+参考解析示例见 `visual_calib/scripts/visualize.py`。
 
 ---
 

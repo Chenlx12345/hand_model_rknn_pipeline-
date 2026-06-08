@@ -58,3 +58,31 @@
 | librknnrt | 集成方系统(/usr/lib/) | 必须 |
 | Eigen / nlohmann | 已静态编进 .a | 不需要集成方再装 |
 | `services::algo` | 集成方 libalgo_input | 头由本包 third_party 提供 |
+
+## 与上一版交付(集成方 ref 快照)的区别
+
+> 打包时自动对比当前 `include/` ←→ 集成方参考快照。**只有 `include/` 是编译期 API**,
+> 集成方据此判断是否要改接入代码。
+
+**公共头有变化**(diff: `-`=上一版 / `+`=本版;集成方现有代码一般仍可编译):
+
+```diff
+@@ -70,6 +70,7 @@
+     /// 运行期统计(回调里更新)。
+     int frames_received() const;
+     int imu_received() const;
++    int hand_imu_received() const;
+
+     /// 拉最新一个 5Hz tick 的结果(给下游 SDK 用;线程安全,非阻塞)。
+     /// 语义:**drop-stale**(只给最新一份;来不及取的中间帧覆盖丢弃)。
+@@ -81,6 +82,7 @@
+ private:
+     struct Impl;
+     Impl* pimpl_;
++    friend void step234_worker_func(Impl*);
+ };
+
+ } // namespace vis
+```
+
+> 注: 算法行为 / NDJSON 字段的变化(不影响编译)见 `docs/RESULT_FORMAT.md` 与交付方 git log。
